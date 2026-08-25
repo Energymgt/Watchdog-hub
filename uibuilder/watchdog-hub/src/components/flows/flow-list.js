@@ -6,7 +6,7 @@
     global.WatchdogHub.components = global.WatchdogHub.components || {};
     global.WatchdogHub.components.FlowList = {
         name: 'FlowList',
-        emits: ['show-incidents'],
+        emits: ['show-incidents', 'select'],
         props: {
             flows: { type: Array, default: function () { return []; } },
             refreshing: { type: Boolean, default: false }
@@ -16,6 +16,9 @@
             reason: formatters.reasonLabel,
             showIncidents: function (flow) {
                 this.$emit('show-incidents', flow);
+            },
+            select: function (flow) {
+                this.$emit('select', flow);
             }
         },
         template:
@@ -25,7 +28,7 @@
                     '<table class="flows-table"><caption class="sr-only">État des flux supervisés</caption>' +
                         '<thead><tr><th scope="col">Flux</th><th scope="col">Source</th><th scope="col">Connecteur</th><th scope="col">Destination</th><th scope="col">État</th><th scope="col">Diagnostic</th><th scope="col">Action</th></tr></thead>' +
                         '<tbody><tr v-for="flow in flows" :key="flow.flow_id">' +
-                            '<td><span class="device-name">{{ flow.name }}</span><span class="device-id">{{ flow.flow_id }}</span></td>' +
+                            '<td><button class="detail-button device-name" type="button" @click="select(flow)">{{ flow.name }}</button><span class="device-id">{{ flow.flow_id }}</span></td>' +
                             '<td>{{ flow.source_id || \'Non disponible\' }}</td>' +
                             '<td>{{ flow.connector_id || \'Non disponible\' }}</td>' +
                             '<td>{{ flow.destination_id || \'Non disponible\' }}</td>' +

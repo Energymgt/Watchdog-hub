@@ -15,7 +15,7 @@
             '<section class="toolbar flows-toolbar" aria-label="Filtres des flux et incidents">' +
                 '<div class="toolbar-row">' +
                     '<ui-field label="Recherche" extra-class="filter-search">' +
-                        '<template #default="slotProps"><input type="search" :value="query" :aria-describedby="slotProps.describedBy" placeholder="Flux, connecteur, signature..." @input="$emit(\'update:query\', $event.target.value)"></template>' +
+                        '<template #default="slotProps"><input id="flows-search" type="search" :value="query" :aria-describedby="slotProps.describedBy" placeholder="Flux, connecteur, signature..." @input="$emit(\'update:query\', $event.target.value)"></template>' +
                     '</ui-field>' +
                     '<ui-field label="État du flux">' +
                         '<template #default="slotProps"><select :value="status" :aria-describedby="slotProps.describedBy" @change="$emit(\'update:status\', $event.target.value)"><option value="all">Tous</option><option value="ok">Opérationnel</option><option value="degraded">Dégradé</option><option value="down">Indisponible</option><option value="unknown">Inconnu</option></select></template>' +

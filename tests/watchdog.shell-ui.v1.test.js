@@ -13,6 +13,10 @@ const UI_FILES = [
     'store/fleet-store.js',
     'components/fleet/app-nav.js',
     'components/overview-page.js',
+    'components/ui/command-palette.js',
+    'components/ui/ui-drawer.js',
+    'components/flows/flow-detail.js',
+    'components/flows/incident-list.js',
     'app.js'
 ];
 
@@ -53,5 +57,28 @@ describe('contrat du shell UI Watchdog Hub', () => {
             { view: 'incidents', incidentId: 'INC-01' }
         );
         assert.equal(router.format('incidents', 'INC 01'), '#incidents/INC%2001');
+    });
+
+    it('charge les composants V2 avant l application', () => {
+        const html = fs.readFileSync(path.join(UI_ROOT, 'index.html'), 'utf8');
+        const appIndex = html.indexOf('./app.js');
+        for (const relative of [
+            'components/ui/command-palette.js',
+            'components/ui/ui-drawer.js',
+            'components/flows/flow-detail.js'
+        ]) {
+            assert.ok(html.indexOf('./' + relative) >= 0, `${relative} absent de index.html`);
+            assert.ok(html.indexOf('./' + relative) < appIndex, `${relative} doit précéder app.js`);
+        }
+    });
+
+    it('garde les actions incident derrière le drawer et la palette locale', () => {
+        const detail = fs.readFileSync(path.join(UI_ROOT, 'components/flows/incident-detail.js'), 'utf8');
+        const palette = fs.readFileSync(path.join(UI_ROOT, 'components/ui/command-palette.js'), 'utf8');
+        const app = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
+        assert.match(detail, /ui-drawer/);
+        assert.match(detail, /allowedTransitions/);
+        assert.match(app, /ctrlKey/);
+        assert.doesNotMatch(palette, /WATCHDOG_INGEST_TOKEN|X-Watchdog-Token/);
     });
 });

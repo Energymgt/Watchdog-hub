@@ -84,10 +84,10 @@
             }
         },
         template:
-            '<ui-modal :opener="opener" title-id="incident-detail-title" description-id="incident-detail-description" @close="close">' +
-                '<div class="modal__header">' +
+            '<ui-drawer :opener="opener" title-id="incident-detail-title" description-id="incident-detail-description" @close="close">' +
+                '<div class="modal__header side-drawer__header">' +
                     '<div><p class="eyebrow">Gestion d’incident</p><h2 id="incident-detail-title">{{ incident.flow_id }}</h2></div>' +
-                    '<button data-modal-initial-focus class="modal__close" type="button" aria-label="Fermer le détail" @click="close">×</button>' +
+                    '<button data-drawer-initial-focus class="modal__close" type="button" aria-label="Fermer le détail" @click="close">×</button>' +
                 '</div>' +
                 '<p id="incident-detail-description" class="incident-id">{{ incident.incident_id }}</p>' +
                 '<span class="status-badge" :class="\'status-badge--\' + stateMeta.tone">{{ stateMeta.label }}</span>' +
@@ -133,6 +133,6 @@
                     '<h3 id="incident-links-title">Éléments liés</h3>' +
                     '<ul><li v-for="item in detail.links" :key="item.target_kind + item.target_id"><strong>{{ item.target_kind }}</strong> : <code>{{ item.target_id }}</code></li></ul>' +
                 '</section>' +
-            '</ui-modal>'
+            '</ui-drawer>'
     };
 }(window));

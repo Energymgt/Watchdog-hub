@@ -6,11 +6,12 @@
     global.WatchdogHub.components = global.WatchdogHub.components || {};
     global.WatchdogHub.components.FlowsPage = {
         name: 'FlowsPage',
-        emits: ['refresh', 'retry', 'select-incident', 'show-incidents'],
+        emits: ['refresh', 'retry', 'select-incident', 'show-incidents', 'select-flow'],
         props: {
             state: { type: Object, required: true },
             now: { type: Number, default: Date.now },
-            section: { type: String, default: 'all' }
+            section: { type: String, default: 'all' },
+            selectedFlow: { type: Object, default: null }
         },
         computed: {
             normalizedQuery: function () {
@@ -65,7 +66,7 @@
                     '<flows-kpis :summary="state.summary" :loading="state.refreshing"></flows-kpis>' +
                     '<flows-filter-bar :query="state.query" :status="state.statusFilter" :incident-state="state.incidentStateFilter" :refreshing="state.refreshing" @update:query="state.query = $event" @update:status="state.statusFilter = $event" @update:incident-state="state.incidentStateFilter = $event" @refresh="$emit(\'refresh\')" @reset="resetFilters"></flows-filter-bar>' +
                     '<p class="results-summary"><template v-if="section !== \'incidents\'">{{ filteredFlows.length }} flux</template><template v-if="section === \'all\'"> et </template><template v-if="section !== \'flows\'">{{ filteredIncidents.length }} incident{{ filteredIncidents.length > 1 ? \'s\' : \'\' }}</template> affiché<span v-if="filteredFlows.length + filteredIncidents.length > 1">s</span>.</p>' +
-                    '<flow-list v-if="section !== \'incidents\'" :flows="filteredFlows" :refreshing="state.refreshing" @show-incidents="$emit(\'show-incidents\', $event)"></flow-list>' +
+                    '<div v-if="section !== \'incidents\'" class="flow-workspace"><flow-list :flows="filteredFlows" :refreshing="state.refreshing" @show-incidents="$emit(\'show-incidents\', $event)" @select="$emit(\'select-flow\', $event)"></flow-list><flow-detail :flow="selectedFlow" :rules="state.rules" :incidents="state.incidents"></flow-detail></div>' +
                     '<incident-list v-if="section !== \'flows\'" :incidents="filteredIncidents" :refreshing="state.refreshing" @select="forwardSelection"></incident-list>' +
                 '</template>' +
             '</div>'

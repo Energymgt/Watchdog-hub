@@ -20,6 +20,8 @@
             var enrollOpen = Vue.ref(false);
             var enrollOpener = Vue.ref(null);
             var incidentOpener = Vue.ref(null);
+            var commandPaletteOpen = Vue.ref(false);
+            var selectedFlow = Vue.ref(null);
             var timerId;
 
             var stale = Vue.computed(function () {
@@ -147,6 +149,38 @@
                 setView('incidents');
             }
 
+            function selectFlow(flow) {
+                selectedFlow.value = flow || null;
+            }
+
+            function openCommandPalette() {
+                commandPaletteOpen.value = true;
+            }
+
+            function handleGlobalKeydown(event) {
+                if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                    event.preventDefault();
+                    openCommandPalette();
+                }
+            }
+
+            function handleCommand(command) {
+                if (command === 'refresh') {
+                    refresh();
+                    if (store.state.view === 'overview' || store.state.view === 'incidents' || store.state.view === 'flows') {
+                        loadFlows(true);
+                    }
+                    return;
+                }
+                setView(command);
+                if (command === 'incidents' || command === 'flows') {
+                    Vue.nextTick(function () {
+                        var search = global.document.getElementById('flows-search');
+                        if (search) search.focus();
+                    });
+                }
+            }
+
             function addIncidentNote(data) {
                 flowsStore.beginMutation();
                 liveMessage.value = 'Enregistrement de la note.';
@@ -215,7 +249,8 @@
             var modalOpen = Vue.computed(function () {
                 return Boolean(store.state.selectedDevice)
                     || Boolean(flowsStore.state.selectedIncident)
-                    || enrollOpen.value;
+                    || enrollOpen.value
+                    || commandPaletteOpen.value;
             });
 
             client = fleet.createUibuilderClient({
@@ -253,6 +288,7 @@
                 var initialRoute = viewFromHash();
                 store.setView(initialRoute.view);
                 global.addEventListener('hashchange', onHashChange);
+                global.addEventListener('keydown', handleGlobalKeydown);
                 timerId = global.setInterval(function () {
                     now.value = Date.now();
                 }, 15000);
@@ -266,6 +302,7 @@
 
             Vue.onBeforeUnmount(function () {
                 global.removeEventListener('hashchange', onHashChange);
+                global.removeEventListener('keydown', handleGlobalKeydown);
                 global.clearInterval(timerId);
             });
 
@@ -277,8 +314,10 @@
                 fleetName: fleetName,
                 modalOpen: modalOpen,
                 enrollOpen: enrollOpen,
+                commandPaletteOpen: commandPaletteOpen,
                 enrollOpener: enrollOpener,
                 incidentOpener: incidentOpener,
+                selectedFlow: selectedFlow,
                 filteredDevices: filteredDevices,
                 pagedDevices: pagedDevices,
                 page: page,
@@ -292,6 +331,9 @@
                 openIncident: openIncident,
                 closeIncident: closeIncident,
                 showFlowIncidents: showFlowIncidents,
+                selectFlow: selectFlow,
+                openCommandPalette: openCommandPalette,
+                handleCommand: handleCommand,
                 addIncidentNote: addIncidentNote,
                 transitionIncident: transitionIncident,
                 resolveIncident: resolveIncident,
@@ -308,8 +350,8 @@
         },
         template:
             '<div class="app-shell">' +
-                '<fleet-header :fleet-name="fleetName" :generated-at="state.snapshot && state.snapshot.generatedAt" :last-evaluation-at="state.snapshot && state.snapshot.lastEvaluationAt" :next-poll-at="state.snapshot && state.snapshot.nextPollAt" :now="now" :stale="stale" :connected="state.connected === true" :source-status="state.sourceStatus" :inert="modalOpen ? true : undefined"></fleet-header>' +
-                '<app-nav :view="state.view" :inert="modalOpen ? true : undefined" @update:view="setView"></app-nav>' +
+                '<fleet-header :fleet-name="fleetName" :generated-at="state.snapshot && state.snapshot.generatedAt" :last-evaluation-at="state.snapshot && state.snapshot.lastEvaluationAt" :next-poll-at="state.snapshot && state.snapshot.nextPollAt" :now="now" :stale="stale" :connected="state.connected === true" :source-status="state.sourceStatus" :flow-summary="flowsState.summary" :fleet-summary="state.summary" :inert="modalOpen ? true : undefined"></fleet-header>' +
+                '<app-nav :view="state.view" :incidents="flowsState.summary.incidentsActive || 0" :flows="(flowsState.summary.degraded || 0) + (flowsState.summary.down || 0)" :fleet-alerts="state.summary.alerts || 0" :inert="modalOpen ? true : undefined" @update:view="setView" @open-command="openCommandPalette"></app-nav>' +
                 '<main id="main-content" class="dashboard" tabindex="-1" :aria-busy="(state.view === \'overview\' || state.view === \'flows\' || state.view === \'incidents\') ? (flowsState.refreshing || flowsState.mutating ? \'true\' : \'false\') : (state.refreshing || state.adminSaving ? \'true\' : \'false\')" :inert="modalOpen ? true : undefined">' +
                     '<p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</p>' +
                     '<ui-banner v-if="state.connected === false" kind="warning">Connexion au serveur interrompue. Reconnexion automatique en cours…</ui-banner>' +
@@ -324,7 +366,7 @@
                         '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :incidents="flowsState.incidents" :flows="flowsState.flows" :loading="flowsState.loading || flowsState.refreshing" :now="now" @open-incident="openIncident" @open-view="setView"></overview-page>' +
                     '</template>' +
                     '<template v-else-if="state.view === \'flows\' || state.view === \'incidents\'">' +
-                        '<flows-page :state="flowsState" :section="state.view" :now="now" @refresh="loadFlows(true)" @retry="loadFlows(false)" @select-incident="openIncident" @show-incidents="showFlowIncidents"></flows-page>' +
+                        '<flows-page :state="flowsState" :section="state.view" :selected-flow="selectedFlow" :now="now" @refresh="loadFlows(true)" @retry="loadFlows(false)" @select-incident="openIncident" @show-incidents="showFlowIncidents" @select-flow="selectFlow"></flows-page>' +
                     '</template>' +
                     '<template v-else-if="state.snapshot">' +
                         '<fleet-kpis :summary="state.summary" :loading="state.refreshing"></fleet-kpis>' +
@@ -344,6 +386,7 @@
                 '<device-detail v-if="state.selectedDevice" :device="state.selectedDevice" :opener="detailOpener" @close="closeDetail"></device-detail>' +
                 '<enroll-wizard v-if="enrollOpen" :opener="enrollOpener" :mqtt="(state.admin && state.admin.mqtt) || {}" @close="closeEnroll" @enroll="enrollDevice"></enroll-wizard>' +
                 '<incident-detail v-if="flowsState.selectedIncident" :detail="flowsState.selectedIncident" :opener="incidentOpener" :busy="flowsState.mutating" @close="closeIncident" @note="addIncidentNote" @transition="transitionIncident" @resolve="resolveIncident"></incident-detail>' +
+                '<command-palette v-if="commandPaletteOpen" @close="commandPaletteOpen = false" @command="handleCommand"></command-palette>' +
             '</div>'
     };
 
