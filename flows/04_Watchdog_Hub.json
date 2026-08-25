@@ -1,0 +1,636 @@
+[
+    {
+        "id": "c4b9e2d1a8f35001",
+        "type": "tab",
+        "label": "Watchdog Hub",
+        "disabled": false,
+        "info": "Import siège uniquement. Variables (Docker / Portainer, sinon onglet Environment) : TEAMS_WEBHOOK_URL, BALENA_API_TOKEN (device:read), BALENA_APP_ID. Bouton Test Teams pour valider le webhook."
+    },
+    {
+        "id": "c4b9e2d1a8f35002",
+        "type": "inject",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Tick 2 min",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "120",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "15",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 130,
+        "y": 160,
+        "wires": [
+            [
+                "c4b9e2d1a8f35003"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35003",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Prepare Balena API",
+        "func": "const cfg = flow.get('fleetAdminConfig') || {};\nconst token = String(cfg.balenaToken || env.get('BALENA_API_TOKEN') || '').trim();\nconst appRef = String(cfg.balenaAppId || env.get('BALENA_APP_ID') || '').trim();\nif (!msg.forcePoll) {\n    const pollMs = Number(cfg.pollIntervalMs);\n    const interval = Number.isFinite(pollMs) && pollMs >= 60000 ? pollMs : 120000;\n    const last = Number(flow.get('fleetLastPollAt') || 0);\n    if (last && Date.now() - last < interval - 2000) {\n        node.status({ fill: 'grey', shape: 'ring', text: 'poll reporté' });\n        return null;\n    }\n}\nif (!token || !appRef) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'BALENA_API_TOKEN / BALENA_APP_ID manquants' });\n    return null;\n}\n\nconst select = 'uuid,device_name,is_online,last_connectivity_event,overall_status,api_heartbeat_state';\nmsg.method = 'GET';\nmsg.headers = {\n    Authorization: 'Bearer ' + token,\n    Accept: 'application/json'\n};\nmsg.payload = {};\n\nif (/^[0-9]+$/.test(appRef)) {\n    msg.balenaStep = 'listDevices';\n    msg.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent('belongs_to__application eq ' + appRef) + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    msg.balenaPage = 0;\n    msg.balenaDevices = [];\n    node.status({ fill: 'blue', shape: 'dot', text: 'fleet id ' + appRef });\n    return msg;\n}\n\nif (/^[a-f0-9]{32}$/i.test(appRef)) {\n    const uuid = appRef.toLowerCase();\n    msg.balenaStep = 'resolveApp';\n    msg.url = \"https://api.balena-cloud.com/v6/device(uuid='\" + uuid + \"')?$select=uuid,belongs_to__application\";\n    node.status({ fill: 'blue', shape: 'dot', text: 'uuid -> fleet' });\n    return msg;\n}\n\nif (/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(appRef)) {\n    msg.balenaStep = 'listDevices';\n    msg.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent(\"belongs_to__application/app_name eq '\" + appRef + \"'\") + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    msg.balenaPage = 0;\n    msg.balenaDevices = [];\n    node.status({ fill: 'blue', shape: 'dot', text: 'slug ' + appRef });\n    return msg;\n}\n\nnode.status({ fill: 'red', shape: 'ring', text: 'BALENA_APP_ID invalide' });\nnode.error('BALENA_APP_ID: ID fleet numerique, slug, ou UUID device', msg);\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 160,
+        "wires": [
+            [
+                "c4b9e2d1a8f35004"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35004",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "GET Balena devices",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "x": 580,
+        "y": 160,
+        "wires": [
+            [
+                "c4b9e2d1a8f35010"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35010",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Resolve Balena fleet",
+        "func": "const select = 'uuid,device_name,is_online,last_connectivity_event,overall_status,api_heartbeat_state';\nconst step = msg.balenaStep || 'listDevices';\nconst code = Number(msg.statusCode || 0) || 0;\n\nif (code >= 400) {\n    let detail = '';\n    try { detail = typeof msg.payload === 'object' ? JSON.stringify(msg.payload).slice(0, 400) : String(msg.payload || ''); } catch (e) { detail = String(msg.payload || ''); }\n    flow.set('fleetLastError', { source: 'balena', at: Date.now(), message: 'HTTP ' + code + ' ' + detail });\n    node.status({ fill: 'red', shape: 'ring', text: 'Balena HTTP ' + code });\n    node.warn('Balena API HTTP ' + code + ' ' + detail);\n    return [null, null];\n}\n\nif (step === 'resolveApp') {\n    const body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\n    const row = Array.isArray(body.d) ? (body.d[0] || {}) : body;\n    let appId = row.belongs_to__application;\n    if (appId && typeof appId === 'object') appId = appId.__id || appId.id;\n    appId = Number(appId);\n    if (!Number.isFinite(appId) || appId <= 0) {\n        flow.set('fleetLastError', { source: 'balena', at: Date.now(), message: 'Fleet introuvable pour UUID' });\n        node.status({ fill: 'red', shape: 'ring', text: 'fleet introuvable pour UUID' });\n        node.error('Impossible de resoudre belongs_to__application: ' + JSON.stringify(row), msg);\n        return [null, null];\n    }\n    const rawAuth = String((msg.headers && (msg.headers.Authorization || msg.headers.authorization)) || '').trim();\n    const token = rawAuth || ('Bearer ' + String(env.get('BALENA_API_TOKEN') || '').trim());\n    msg.balenaStep = 'listDevices';\n    msg.balenaPage = 0;\n    msg.balenaDevices = [];\n    msg.method = 'GET';\n    msg.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent('belongs_to__application eq ' + appId)\n        + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    msg.headers = { Authorization: token.indexOf('Bearer ') === 0 ? token : ('Bearer ' + token), Accept: 'application/json' };\n    msg.payload = {};\n    node.status({ fill: 'blue', shape: 'dot', text: 'fleet id ' + appId });\n    return [null, msg];\n}\n\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst pageRows = Array.isArray(body.d) ? body.d : [];\nconst accumulated = Array.isArray(msg.balenaDevices) ? msg.balenaDevices.concat(pageRows) : pageRows.slice();\nconst page = Number(msg.balenaPage || 0);\nif (pageRows.length === 1000 && page < 99) {\n    msg.balenaPage = page + 1;\n    msg.balenaDevices = accumulated;\n    msg.url = String(msg.url).replace(/&\\$skip=\\d+/, '&$skip=' + ((page + 1) * 1000));\n    msg.payload = {};\n    node.status({ fill: 'blue', shape: 'dot', text: accumulated.length + ' devices...' });\n    return [null, msg];\n}\nmsg.payload = { d: accumulated };\ndelete msg.balenaDevices;\nflow.set('fleetLastPollAt', Date.now());\nflow.set('fleetLastError', null);\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 700,
+        "y": 160,
+        "wires": [
+            [
+                "c4b9e2d1a8f35005"
+            ],
+            [
+                "c4b9e2d1a8f35004"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35005",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Evaluate fleet watchdog",
+        "func": "const now = Date.now();\nconst cfg = flow.get('fleetAdminConfig') || {};\nfunction fleetNum(key, fallback, min, max) {\n    const n = Number(cfg[key]);\n    if (!Number.isFinite(n) || n < min || n > max) return fallback;\n    return n;\n}\nfunction fleetSecret(envKey, uiKey) {\n    const fromUi = String(cfg[uiKey] || '').trim();\n    if (fromUi) return fromUi;\n    return String(env.get(envKey) || '').trim();\n}\nconst offlineGraceMs = fleetNum('offlineGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst firstSeenGraceMs = fleetNum('firstSeenGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst confirmsRequired = fleetNum('confirmsRequired', 2, 1, 5);\nconst graceMin = Math.round(offlineGraceMs / 60000);\nconst isPoll = String(msg.topic || '') !== 'heartbeat_evaluate';\n\nlet fleetStartedAt = Number(flow.get('fleetStartedAt') || 0);\nif (!fleetStartedAt) {\n    fleetStartedAt = now;\n    flow.set('fleetStartedAt', fleetStartedAt);\n}\nconst fleetGrace = (now - fleetStartedAt) < offlineGraceMs;\n\nfunction parisTime(ts) {\n    try {\n        return new Date(ts).toLocaleString('fr-CH', { timeZone: 'Europe/Paris' });\n    } catch (e) {\n        return new Date(ts).toISOString();\n    }\n}\n\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst devices = Array.isArray(body.d) ? body.d : [];\nif (isPoll) {\n    flow.set('fleetBalenaDevices', devices);\n}\nif (devices.length === 0 && Number(msg.statusCode || 0) >= 400) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Balena API HTTP ' + msg.statusCode });\n    node.warn('Balena API error HTTP ' + msg.statusCode);\n    return null;\n}\n\nconst heartbeats = flow.get('fleetHeartbeats') || {};\nconst prev = flow.get('fleetWatchdogState') || {};\nlet confirmed = flow.get('fleetConfirmedState');\nlet firstSeenAt = flow.get('fleetFirstSeenAt');\nlet candidate = flow.get('fleetCandidate');\nif (!confirmed || typeof confirmed !== 'object') {\n    confirmed = {};\n    Object.keys(prev).forEach(function (uuid) {\n        const state = prev[uuid] && prev[uuid].state;\n        if (state) confirmed[uuid] = { state: state };\n    });\n}\nif (!firstSeenAt || typeof firstSeenAt !== 'object') {\n    firstSeenAt = {};\n    Object.keys(prev).forEach(function (uuid) { firstSeenAt[uuid] = 1; });\n    Object.keys(heartbeats).forEach(function (uuid) {\n        if (!firstSeenAt[uuid]) firstSeenAt[uuid] = 1;\n    });\n}\nif (!candidate || typeof candidate !== 'object') candidate = {};\n\nconst next = {};\nconst transitions = [];\n\nfunction hbAge(uuid) {\n    const hb = heartbeats[uuid];\n    if (!hb) return null;\n    const ts = Number(hb.ts || hb.receivedAt || 0);\n    if (!ts) return null;\n    return now - ts;\n}\n\nfunction considerAlert(entry) {\n    const uuid = entry.uuid;\n    if (!firstSeenAt[uuid]) firstSeenAt[uuid] = now;\n    if (!isPoll) return;\n    const prevState = (confirmed[uuid] && confirmed[uuid].state) ? confirmed[uuid].state : 'ok';\n    if (entry.state === prevState) {\n        candidate[uuid] = { state: entry.state, count: 0 };\n        return;\n    }\n    const cur = candidate[uuid];\n    if (cur && cur.state === entry.state) candidate[uuid].count += 1;\n    else candidate[uuid] = { state: entry.state, count: 1 };\n    const inFirstSeenGrace = (now - Number(firstSeenAt[uuid] || now)) < firstSeenGraceMs;\n    if (inFirstSeenGrace) return;\n    if (candidate[uuid].count >= confirmsRequired) {\n        transitions.push({\n            uuid: uuid,\n            name: entry.name,\n            from: prevState,\n            to: entry.state,\n            severity: entry.severity,\n            detail: entry.detail,\n            direction: entry.state === 'ok' ? 'up' : 'down'\n        });\n        confirmed[uuid] = { state: entry.state };\n        candidate[uuid] = { state: entry.state, count: 0 };\n    }\n}\n\nconst seen = {};\nfor (let i = 0; i < devices.length; i += 1) {\n    const d = devices[i] || {};\n    const uuid = String(d.uuid || '').trim();\n    if (!uuid) continue;\n    seen[uuid] = true;\n    const name = String(d.device_name || uuid);\n    const online = !!d.is_online;\n    const age = hbAge(uuid);\n    const hbOk = age !== null && age <= offlineGraceMs;\n\n    let state;\n    let severity;\n    let detail;\n    if (fleetGrace) {\n        state = 'ok';\n        severity = 'ok';\n        detail = 'boot grace flotte';\n    } else if (!online && !hbOk) {\n        state = 'dead';\n        severity = 'critical';\n        detail = 'Balena offline et heartbeat absent > ' + graceMin + ' min';\n    } else if (!online && hbOk) {\n        state = 'cloud_down';\n        severity = 'warning';\n        detail = 'Balena offline, heartbeat MQTT OK (collecte locale possible)';\n    } else if (online && !hbOk) {\n        state = 'heartbeat_missing';\n        severity = 'high';\n        detail = 'Balena online, heartbeat MQTT absent > ' + graceMin + ' min';\n    } else {\n        state = 'ok';\n        severity = 'ok';\n        detail = 'Balena online, heartbeat OK';\n    }\n\n    const entry = {\n        uuid: uuid,\n        name: name,\n        online: online,\n        hbOk: hbOk,\n        state: state,\n        severity: severity,\n        detail: detail,\n        lastConnectivity: d.last_connectivity_event || null,\n        overallStatus: d.overall_status || null\n    };\n    next[uuid] = entry;\n    considerAlert(entry);\n}\n\nconst hbUuids = Object.keys(heartbeats);\nfor (let h = 0; h < hbUuids.length; h += 1) {\n    const uuid = hbUuids[h];\n    if (seen[uuid]) continue;\n    const age = hbAge(uuid);\n    const hbOk = age !== null && age <= offlineGraceMs;\n    const name = (heartbeats[uuid].device && heartbeats[uuid].device.name) ? heartbeats[uuid].device.name : uuid;\n    const state = fleetGrace ? 'ok' : (hbOk ? 'unknown_online' : 'dead');\n    const severity = fleetGrace ? 'ok' : (hbOk ? 'warning' : 'critical');\n    const detail = fleetGrace\n        ? 'boot grace flotte'\n        : (hbOk\n            ? 'Heartbeat OK mais appareil absent de l API Balena'\n            : 'Heartbeat absent > ' + graceMin + ' min (appareil inconnu de ce poll Balena)');\n    const entry = {\n        uuid: uuid,\n        name: name,\n        online: false,\n        hbOk: hbOk,\n        state: state,\n        severity: severity,\n        detail: detail\n    };\n    next[uuid] = entry;\n    considerAlert(entry);\n}\n\nconst enrolled = flow.get('fleetEnrolledDevices') || {};\nObject.keys(enrolled).forEach(function (uuid) {\n    const meta = enrolled[uuid] && typeof enrolled[uuid] === 'object' ? enrolled[uuid] : {};\n    if (next[uuid]) {\n        if (meta.name) next[uuid].name = String(meta.name);\n        next[uuid].enrolled = true;\n        return;\n    }\n    next[uuid] = {\n        uuid: uuid,\n        name: String(meta.name || uuid),\n        online: false,\n        hbOk: false,\n        state: 'unknown',\n        severity: 'unknown',\n        detail: 'En attente du premier heartbeat MQTT',\n        enrolled: true\n    };\n});\n\nif (isPoll) {\n    Object.keys(candidate).forEach(function (uuid) { if (!next[uuid]) delete candidate[uuid]; });\n    Object.keys(confirmed).forEach(function (uuid) { if (!next[uuid]) delete confirmed[uuid]; });\n    Object.keys(firstSeenAt).forEach(function (uuid) { if (!next[uuid]) delete firstSeenAt[uuid]; });\n}\n\nlet history = flow.get('fleetTransitionHistory') || [];\nif (isPoll) {\n    transitions.forEach(function (transition) {\n        history.push(Object.assign({ at: now }, transition));\n    });\n    if (history.length > 500) history = history.slice(history.length - 500);\n    flow.set('fleetTransitionHistory', history);\n    flow.set('fleetConfirmedState', confirmed);\n    flow.set('fleetCandidate', candidate);\n}\nflow.set('fleetFirstSeenAt', firstSeenAt);\nflow.set('fleetWatchdogState', next);\nflow.set('fleetLastEvaluationAt', now);\n\nconst downCount = Object.keys(next).filter(function (k) { return next[k].state !== 'ok'; }).length;\nconst pendingCount = isPoll\n    ? Object.keys(candidate).filter(function (k) { return Number(candidate[k] && candidate[k].count || 0) > 0; }).length\n    : 0;\nnode.status({\n    fill: downCount ? 'red' : 'green',\n    shape: 'dot',\n    text: devices.length + ' devices, ' + downCount + ' down, ' + pendingCount + ' pending, ' + transitions.length + ' transitions'\n});\n\nconst webhook = fleetSecret('TEAMS_WEBHOOK_URL', 'teamsWebhookUrl');\nconst snapshotTrigger = { topic: 'fleet_state_changed' };\nif (!isPoll || !webhook || transitions.length === 0) {\n    return [null, snapshotTrigger];\n}\n\nconst order = { ok: 0, warning: 1, high: 2, critical: 3 };\nconst worst = transitions.reduce(function (acc, t) {\n    const sev = t.direction === 'up' ? 'ok' : t.severity;\n    return (order[sev] || 0) > (order[acc] || 0) ? sev : acc;\n}, 'ok');\n\nconst title = (worst === 'ok' ? '[RECOVERY] ' : (worst === 'critical' ? '[CRITIQUE] ' : '[ALERTE] '))\n    + 'HUB Watchdog Hub';\n\nconst facts = [\n    { title: 'Source', value: 'HUB de supervision' },\n    { title: 'Quand', value: parisTime(now) }\n];\nfor (let t = 0; t < transitions.length; t += 1) {\n    const tr = transitions[t];\n    facts.push({\n        title: tr.name,\n        value: tr.uuid + ' — ' + (tr.direction === 'up' ? 'OK' : tr.to) + ' — ' + tr.detail\n    });\n}\n\nconst color = worst === 'ok' ? 'good' : (worst === 'critical' ? 'attention' : 'warning');\nmsg.method = 'POST';\nmsg.url = webhook;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    type: 'message',\n    attachments: [{\n        contentType: 'application/vnd.microsoft.teams.card.adaptive',\n        contentUrl: null,\n        content: {\n            $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',\n            type: 'AdaptiveCard',\n            version: '1.4',\n            body: [\n                { type: 'TextBlock', size: 'Large', weight: 'Bolder', text: title, wrap: true, color: color },\n                { type: 'FactSet', facts: facts }\n            ]\n        }\n    }]\n};\nmsg.teamsRetryCount = 0;\nreturn [msg, snapshotTrigger];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 820,
+        "y": 160,
+        "wires": [
+            [
+                "e6db24f3ca057104"
+            ],
+            [
+                "d5ca13e2b9f46103"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35006",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "POST Teams webhook",
+        "method": "use",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "x": 1090,
+        "y": 160,
+        "wires": [
+            [
+                "d5ca13e2b9f46105"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35007",
+        "type": "mqtt in",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Heartbeats",
+        "topic": "bacnet/gateway/+/heartbeat",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "c4b9e2d1a8f35090",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 280,
+        "wires": [
+            [
+                "c4b9e2d1a8f35008"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35008",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Record heartbeat",
+        "func": "const topic = String(msg.topic || '');\nconst parts = topic.split('/');\nlet uuid = (parts.length >= 3 && parts[0] === 'bacnet' && parts[1] === 'gateway') ? parts[2] : '';\nconst payload = (msg.payload && typeof msg.payload === 'object' && !Array.isArray(msg.payload)) ? msg.payload : {};\nif (payload.device && payload.device.uuid) uuid = String(payload.device.uuid);\nif (!uuid) return null;\n\nconst now = Date.now();\nconst payloadTs = Number(payload.ts);\nconst validTs = Number.isFinite(payloadTs) && payloadTs > 0 && payloadTs <= now + 300000;\nconst timestamp = validTs ? payloadTs : now;\nconst last = flow.get('fleetHeartbeats') || {};\nlast[uuid] = {\n    ts: timestamp,\n    timestampTrusted: validTs,\n    receivedAt: now,\n    retained: !!msg.retain,\n    device: payload.device || { uuid: uuid },\n    health: payload.health || null,\n    mqtt: payload.mqtt || null,\n    buffer: payload.buffer || null,\n    snapshot: payload.snapshot || null,\n    supervisor: payload.supervisor || null,\n    grace: !!payload.grace\n};\n\nconst cfg = flow.get('fleetAdminConfig') || {};\nconst ttlDaysRaw = Number(cfg.heartbeatTtlDays || env.get('FLEET_HEARTBEAT_TTL_DAYS'));\nconst ttlMs = (Number.isFinite(ttlDaysRaw) && ttlDaysRaw >= 1 ? ttlDaysRaw : 30) * 86400000;\nObject.keys(last).forEach(function (key) {\n    const itemTs = Number(last[key] && (last[key].ts || last[key].receivedAt) || 0);\n    if (!itemTs || now - itemTs > ttlMs) delete last[key];\n});\nflow.set('fleetHeartbeats', last);\nflow.set('fleetLastHeartbeatAt', now);\nnode.status({ fill: 'green', shape: 'dot', text: Object.keys(last).length + ' heartbeats' });\nreturn { topic: 'heartbeat_evaluate', payload: { d: flow.get('fleetBalenaDevices') || [] } };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 400,
+        "y": 280,
+        "wires": [
+            [
+                "c4b9e2d1a8f35005"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35009",
+        "type": "catch",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Catch Balena API",
+        "scope": [
+            "c4b9e2d1a8f35004"
+        ],
+        "uncaught": false,
+        "x": 560,
+        "y": 240,
+        "wires": [
+            [
+                "c4b9e2d1a8f3500a"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f3500a",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Log Balena API error",
+        "func": "const errText = (msg.error && (msg.error.message || String(msg.error))) || 'Balena API request failed';\nflow.set('fleetLastError', { source: 'balena', at: Date.now(), message: errText });\nnode.warn('Watchdog fleet Balena API error: ' + errText);\nnode.status({ fill: 'yellow', shape: 'ring', text: 'Balena API error' });\nreturn { topic: 'fleet_state_changed' };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 800,
+        "y": 240,
+        "wires": [
+            [
+                "d5ca13e2b9f46103"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f3500b",
+        "type": "catch",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Catch Teams webhook",
+        "scope": [
+            "c4b9e2d1a8f35006"
+        ],
+        "uncaught": false,
+        "x": 860,
+        "y": 320,
+        "wires": [
+            [
+                "c4b9e2d1a8f3500c"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f3500c",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Log Teams error",
+        "func": "const errText = (msg.error && (msg.error.message || String(msg.error))) || 'Teams webhook failed';\nflow.set('fleetTeamsLastError', { source: 'teams', at: Date.now(), message: errText });\nnode.warn('Watchdog fleet Teams webhook error: ' + errText);\nnode.status({ fill: 'yellow', shape: 'ring', text: 'Teams webhook error' });\nreturn { topic: 'fleet_state_changed' };",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1090,
+        "y": 320,
+        "wires": [
+            [
+                "d5ca13e2b9f46103"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f3500d",
+        "type": "comment",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Import siège uniquement",
+        "info": "1) Canal Teams Weebox → … → Workflows → « Publier dans un canal lorsqu’une demande webhook est reçue ».\n2) Copier l’URL HTTPS (logic.azure.com) dans l’onglet Watchdog Hub → TEAMS_WEBHOOK_URL.\n3) Balena Cloud → Access tokens (device:read) → BALENA_API_TOKEN.\n4) BALENA_APP_ID accepte un ID fleet numérique, un slug ou un UUID device.\n5) Broker MQTT: iot.energymgt.io — réutiliser le config existant à l’import, puis user/pass si le broker l’exige.\n6) Deploy, puis bouton « Test Teams ».\\n7) Dashboard: /watchdog-hub — vue Flotte + Administration (config runtime persistée dans le contexte Node-RED, repli sur les variables d’environnement).",
+        "x": 180,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "c4b9e2d1a8f3500e",
+        "type": "inject",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Test Teams",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 130,
+        "y": 400,
+        "wires": [
+            [
+                "c4b9e2d1a8f3500f"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f3500f",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Build Teams test card",
+        "func": "const cfg = flow.get('fleetAdminConfig') || {};\nconst webhook = String(cfg.teamsWebhookUrl || env.get('TEAMS_WEBHOOK_URL') || '').trim();\nif (!webhook) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'TEAMS_WEBHOOK_URL vide' });\n    node.warn('Coller l URL du Workflow Teams sur l onglet Watchdog Hub');\n    return null;\n}\nconst when = new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Paris' });\nmsg.method = 'POST';\nmsg.url = webhook;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    type: 'message',\n    attachments: [{\n        contentType: 'application/vnd.microsoft.teams.card.adaptive',\n        contentUrl: null,\n        content: {\n            $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',\n            type: 'AdaptiveCard',\n            version: '1.4',\n            body: [\n                { type: 'TextBlock', size: 'Large', weight: 'Bolder', text: '[TEST] HUB Watchdog Hub', wrap: true, color: 'accent' },\n                { type: 'FactSet', facts: [\n                    { title: 'Source', value: 'HUB de supervision' },\n                    { title: 'Quand', value: when },\n                    { title: 'Service', value: 'Watchdog Hub' },\n                    { title: 'Statut', value: 'Canal Teams opérationnel' }\n                ] }\n            ]\n        }\n    }]\n};\nnode.status({ fill: 'blue', shape: 'dot', text: 'test envoyé' });\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 400,
+        "wires": [
+            [
+                "e6db24f3ca057104"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f35090",
+        "type": "mqtt-broker",
+        "name": "MQTT Broker (fleet)",
+        "broker": "iot.energymgt.io",
+        "port": "1883",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "compatmode": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "d5ca13e2b9f46101",
+        "type": "uibuilder",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Watchdog Hub UI",
+        "topic": "",
+        "url": "watchdog-hub",
+        "okToGo": true,
+        "fwdInMessages": true,
+        "allowScripts": false,
+        "allowStyles": false,
+        "copyIndex": true,
+        "templateFolder": "blank",
+        "extTemplate": "",
+        "showfolder": false,
+        "reload": true,
+        "sourceFolder": "src",
+        "deployedVersion": "7.5.0",
+        "showMsgUib": true,
+        "title": "Watchdog Hub",
+        "descr": "Supervision centralisée des gateways BACnet",
+        "x": 1130,
+        "y": 500,
+        "wires": [
+            [
+                "d5ca13e2b9f46102",
+                "f10a000000000001"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "d5ca13e2b9f46102",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Fleet UI Actions",
+        "func": "const request = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(request.action || '');\nconst data = (request.data && typeof request.data === 'object') ? request.data : {};\nmsg._uibOrigin = msg._socketId;\n\nfunction cfg() {\n    const saved = flow.get('fleetAdminConfig');\n    return (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : {};\n}\n\nfunction looksMasked(value) {\n    const text = String(value || '');\n    return !text || text.indexOf('•') !== -1 || text.indexOf('*') !== -1;\n}\n\nif (action === 'fleet_snapshot_get') {\n    return [msg, null, null];\n}\n\nif (action === 'fleet_refresh_request') {\n    const now = Date.now();\n    const last = Number(flow.get('fleetManualRefreshAt') || 0);\n    if (now - last < 15000) {\n        msg.snapshotNotice = 'Un rafraîchissement a déjà été demandé récemment.';\n        return [msg, null, null];\n    }\n    flow.set('fleetManualRefreshAt', now);\n    return [null, { payload: now, forcePoll: true }, null];\n}\n\nif (action === 'fleet_admin_save') {\n    const now = Date.now();\n    const last = Number(flow.get('fleetAdminSaveAt') || 0);\n    if (now - last < 2000) {\n        msg.snapshotNotice = 'Enregistrement déjà en cours.';\n        return [msg, null, null];\n    }\n    const next = Object.assign({}, cfg());\n    if (data.fleetName !== undefined) next.fleetName = String(data.fleetName || '').trim().slice(0, 80);\n    if (data.balenaAppId !== undefined) next.balenaAppId = String(data.balenaAppId || '').trim();\n    if (data.mqttHost !== undefined) next.mqttHost = String(data.mqttHost || '').trim().slice(0, 120);\n    if (data.mqttPort !== undefined) {\n        const port = Number(data.mqttPort);\n        next.mqttPort = Number.isFinite(port) && port > 0 && port < 65536 ? port : 1883;\n    }\n    if (data.mqttTopicPattern !== undefined) {\n        next.mqttTopicPattern = String(data.mqttTopicPattern || '').trim().slice(0, 160);\n    }\n    const ttl = Number(data.heartbeatTtlDays);\n    if (Number.isFinite(ttl)) next.heartbeatTtlDays = Math.min(365, Math.max(1, Math.round(ttl)));\n    const offlineMin = Number(data.offlineGraceMinutes);\n    if (Number.isFinite(offlineMin)) next.offlineGraceMinutes = Math.min(60, Math.max(1, Math.round(offlineMin)));\n    const firstMin = Number(data.firstSeenGraceMinutes);\n    if (Number.isFinite(firstMin)) next.firstSeenGraceMinutes = Math.min(60, Math.max(1, Math.round(firstMin)));\n    const confirms = Number(data.confirmsRequired);\n    if (Number.isFinite(confirms)) next.confirmsRequired = Math.min(5, Math.max(1, Math.round(confirms)));\n    const poll = Number(data.pollIntervalMs);\n    if (Number.isFinite(poll)) next.pollIntervalMs = Math.min(3600000, Math.max(60000, Math.round(poll)));\n    if (!looksMasked(data.balenaToken)) next.balenaToken = String(data.balenaToken).trim();\n    if (!looksMasked(data.teamsWebhookUrl)) next.teamsWebhookUrl = String(data.teamsWebhookUrl).trim();\n    flow.set('fleetAdminConfig', next);\n    flow.set('fleetAdminSaveAt', now);\n    msg.snapshotNotice = 'Configuration enregistrée.';\n    return [msg, { payload: now, forcePoll: true }, null];\n}\n\nif (action === 'fleet_device_enroll') {\n    const uuid = String(data.uuid || '').trim();\n    const name = String(data.name || '').trim().slice(0, 80);\n    if (!uuid || uuid.length < 8 || uuid.length > 128 || /[^A-Za-z0-9._:-]/.test(uuid)) {\n        msg.snapshotNotice = 'UUID invalide. Utilisez l’identifiant Balena ou un identifiant MQTT stable.';\n        return [msg, null, null];\n    }\n    const enrolled = flow.get('fleetEnrolledDevices') || {};\n    enrolled[uuid] = {\n        uuid: uuid,\n        name: name || uuid,\n        enrolledAt: Date.now(),\n        source: 'manual'\n    };\n    flow.set('fleetEnrolledDevices', enrolled);\n    msg.snapshotNotice = 'Appareil enregistré. En attente du premier heartbeat.';\n    return [msg, { payload: Date.now(), forcePoll: true }, null];\n}\n\nif (action === 'fleet_device_unenroll') {\n    const uuid = String(data.uuid || '').trim();\n    const enrolled = flow.get('fleetEnrolledDevices') || {};\n    if (uuid && enrolled[uuid]) {\n        delete enrolled[uuid];\n        flow.set('fleetEnrolledDevices', enrolled);\n        msg.snapshotNotice = 'Appareil retiré de l’inventaire manuel.';\n    }\n    return [msg, null, null];\n}\n\nif (action === 'fleet_teams_test') {\n    return [null, null, { payload: Date.now() }];\n}\n\nreturn [null, null, null];",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 310,
+        "y": 500,
+        "wires": [
+            [
+                "d5ca13e2b9f46103"
+            ],
+            [
+                "c4b9e2d1a8f35003"
+            ],
+            [
+                "c4b9e2d1a8f3500f"
+            ]
+        ]
+    },
+    {
+        "id": "f10a000000000001",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Flows UI Actions",
+        "func": "const request = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(request.action || '');\nconst data = (request.data && typeof request.data === 'object') ? request.data : {};\nconst allowed = ['flows_snapshot_get', 'flows_refresh_request', 'flows_incident_get', 'flows_incident_action', 'flows_incident_patch', 'flows_incident_resolve'];\nif (allowed.indexOf(action) === -1) return [null, null];\n\nmsg._uibOrigin = msg._socketId;\nmsg._flowsAction = action;\nconst port = Number(env.get('WATCHDOG_INGEST_PORT')) || 8091;\nconst base = 'http://127.0.0.1:' + port;\nconst token = String(env.get('WATCHDOG_INGEST_TOKEN') || '').trim();\nmsg.headers = { Accept: 'application/json' };\nif (token) msg.headers['X-Watchdog-Token'] = token;\n\nfunction fail(error, message) {\n    msg.topic = 'flows_error';\n    msg.payload = { ok: false, error: error, message: message, operation: action };\n    if (msg._uibOrigin) msg._uib = { originator: msg._uibOrigin };\n    return [null, msg];\n}\nfunction incidentId() {\n    const value = String(data.incident_id || '').trim();\n    return value && value.length <= 160 && !/[\\\\/?#]/.test(value) ? value : '';\n}\nfunction jsonRequest(method, url, body) {\n    msg.method = method;\n    msg.url = url;\n    msg.headers['Content-Type'] = 'application/json';\n    msg.payload = body;\n    return [msg, null];\n}\nfunction startSnapshot(notice) {\n    msg.method = 'GET';\n    msg.url = base + '/v1/flows';\n    msg.payload = {};\n    msg._flowsStep = 'snapshot_flows';\n    msg._flowsNotice = notice || null;\n    return [msg, null];\n}\n\nif (action === 'flows_snapshot_get' || action === 'flows_refresh_request') {\n    return startSnapshot(action === 'flows_refresh_request' ? 'Données Flux actualisées.' : null);\n}\n\nconst id = incidentId();\nif (!id) return fail('invalid_incident_id', 'Identifiant d’incident invalide.');\nconst encoded = encodeURIComponent(id);\nif (action === 'flows_incident_get') {\n    msg.method = 'GET';\n    msg.url = base + '/v1/incidents/' + encoded;\n    msg.payload = {};\n    msg._flowsStep = 'incident_detail';\n    return [msg, null];\n}\nif (action === 'flows_incident_action') {\n    return jsonRequest('POST', base + '/v1/incidents/' + encoded + '/actions', {\n        actor: data.actor,\n        kind: data.kind || 'note',\n        comment: data.comment,\n        to_state: data.to_state\n    });\n}\nif (action === 'flows_incident_patch') {\n    return jsonRequest('PATCH', base + '/v1/incidents/' + encoded, {\n        actor: data.actor,\n        to_state: data.to_state,\n        comment: data.comment\n    });\n}\nreturn jsonRequest('POST', base + '/v1/incidents/' + encoded + '/resolutions', {\n    actor: data.actor,\n    comment: data.comment\n});",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 310,
+        "y": 560,
+        "wires": [
+            [
+                "f10a000000000002"
+            ],
+            [
+                "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "f10a000000000002",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Watchdog ingest API",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "x": 570,
+        "y": 560,
+        "wires": [
+            [
+                "f10a000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "f10a000000000003",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Build Flows UI Response",
+        "func": "const code = Number(msg.statusCode || 0);\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(msg._flowsAction || '');\nconst port = Number(env.get('WATCHDOG_INGEST_PORT')) || 8091;\nconst base = 'http://127.0.0.1:' + port;\n\nfunction targetUi(topic, payload) {\n    msg.topic = topic;\n    msg.payload = payload;\n    delete msg.headers;\n    delete msg.url;\n    delete msg.method;\n    if (msg._uibOrigin) msg._uib = { originator: msg._uibOrigin };\n    return [null, msg];\n}\nfunction apiError() {\n    const error = String(body.error || (msg.error && msg.error.message) || 'registry_unavailable');\n    const labels = {\n        unauthorized: 'Accès à l’API Watchdog refusé.',\n        not_found: 'La ressource demandée est introuvable.',\n        invalid_transition: 'Cette transition d’incident n’est pas autorisée.',\n        resolution_required: 'Utilisez une résolution commentée pour passer à l’état Résolu.',\n        not_en_validation: 'L’incident doit être en validation avant sa résolution.',\n        registry_unavailable: 'Le registre Watchdog est indisponible.'\n    };\n    return targetUi('flows_error', {\n        ok: false,\n        error: error,\n        message: labels[error] || 'Échec de l’opération Watchdog.',\n        statusCode: code || null,\n        operation: action,\n        allowed: body.allowed || null\n    });\n}\nif (code < 200 || code >= 300 || body.ok === false || msg.error) return apiError();\n\nif (msg._flowsStep === 'snapshot_flows') {\n    msg._flowsData = { flows: Array.isArray(body.flows) ? body.flows : [], rules: Array.isArray(body.rules) ? body.rules : [] };\n    msg._flowsStep = 'snapshot_incidents';\n    msg.method = 'GET';\n    msg.url = base + '/v1/incidents?limit=100';\n    msg.payload = {};\n    return [msg, null];\n}\nif (msg._flowsStep === 'snapshot_incidents') {\n    const data = msg._flowsData || { flows: [], rules: [] };\n    return targetUi('flows_snapshot', {\n        ok: true,\n        generatedAt: Date.now(),\n        flows: data.flows,\n        rules: data.rules,\n        incidents: Array.isArray(body.incidents) ? body.incidents : [],\n        notice: msg._flowsNotice || null\n    });\n}\nif (msg._flowsStep === 'incident_detail') {\n    return targetUi('flows_incident', body);\n}\n\nmsg._flowsStep = 'snapshot_flows';\nmsg._flowsNotice = action === 'flows_incident_action'\n    ? 'Action enregistrée.'\n    : (action === 'flows_incident_resolve' ? 'Résolution enregistrée.' : 'État de l’incident mis à jour.');\nmsg.method = 'GET';\nmsg.url = base + '/v1/flows';\nmsg.payload = {};\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 830,
+        "y": 560,
+        "wires": [
+            [
+                "f10a000000000002"
+            ],
+            [
+                "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "d5ca13e2b9f46103",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Build Fleet Snapshot",
+        "func": "const now = Date.now();\nconst state = flow.get('fleetWatchdogState') || {};\nconst heartbeats = flow.get('fleetHeartbeats') || {};\nconst history = flow.get('fleetTransitionHistory') || [];\nconst candidates = flow.get('fleetCandidate') || {};\nconst confirmed = flow.get('fleetConfirmedState') || {};\nconst firstSeenAt = flow.get('fleetFirstSeenAt') || {};\nconst cfg = flow.get('fleetAdminConfig') || {};\nfunction fleetNum(key, fallback, min, max) {\n    const n = Number(cfg[key]);\n    if (!Number.isFinite(n) || n < min || n > max) return fallback;\n    return n;\n}\nfunction fleetSecret(envKey, uiKey) {\n    const fromUi = String(cfg[uiKey] || '').trim();\n    if (fromUi) return fromUi;\n    return String(env.get(envKey) || '').trim();\n}\nfunction hintSecret(value) {\n    const text = String(value || '');\n    if (!text) return '';\n    if (text.length <= 4) return '••••';\n    return '••••' + text.slice(-4);\n}\nfunction hintUrl(value) {\n    try { return new URL(value).host; } catch (e) { return value ? 'configurée' : ''; }\n}\nconst confirmsRequired = fleetNum('confirmsRequired', 2, 1, 5);\nconst firstSeenGraceMs = fleetNum('firstSeenGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst offlineGraceMs = fleetNum('offlineGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst pollIntervalMs = fleetNum('pollIntervalMs', 120000, 60000, 3600000);\nconst heartbeatTtlDays = fleetNum('heartbeatTtlDays', Number(env.get('FLEET_HEARTBEAT_TTL_DAYS')) || 30, 1, 365);\nconst balenaToken = fleetSecret('BALENA_API_TOKEN', 'balenaToken');\nconst balenaAppId = String(cfg.balenaAppId || env.get('BALENA_APP_ID') || '').trim();\nconst teamsWebhook = fleetSecret('TEAMS_WEBHOOK_URL', 'teamsWebhookUrl');\nconst historyByUuid = {};\nhistory.forEach(function (entry) {\n    if (!entry || !entry.uuid) return;\n    if (!historyByUuid[entry.uuid]) historyByUuid[entry.uuid] = [];\n    const list = historyByUuid[entry.uuid];\n    list.push(entry);\n    if (list.length > 10) list.shift();\n});\nconst devices = Object.keys(state).map(function (uuid) {\n    const current = state[uuid] || {};\n    const hb = heartbeats[uuid] || null;\n    const hbTs = hb ? Number(hb.ts || hb.receivedAt || 0) : 0;\n    return {\n        uuid: String(current.uuid || uuid),\n        name: String(current.name || (hb && hb.device && hb.device.name) || uuid),\n        state: current.state || 'unknown_online',\n        severity: current.severity || 'warning',\n        detail: current.detail || '',\n        online: !!current.online,\n        hbOk: !!current.hbOk,\n        heartbeat: hb ? {\n            ts: hbTs || null,\n            receivedAt: Number(hb.receivedAt || 0) || null,\n            ageSec: hbTs ? Math.max(0, Math.floor((now - hbTs) / 1000)) : null,\n            retained: !!hb.retained,\n            timestampTrusted: !!hb.timestampTrusted\n        } : null,\n        lastConnectivity: current.lastConnectivity || null,\n        overallStatus: current.overallStatus || null,\n        device: hb && hb.device ? hb.device : null,\n        health: hb && hb.health ? hb.health : null,\n        mqtt: hb && hb.mqtt ? hb.mqtt : null,\n        buffer: hb && hb.buffer ? hb.buffer : null,\n        snapshot: hb && hb.snapshot ? hb.snapshot : null,\n        supervisor: hb && hb.supervisor ? hb.supervisor : null,\n        gatewayGrace: !!(hb && hb.grace),\n        firstSeenAt: Number(firstSeenAt[uuid] || 0) || null,\n        confirmedState: confirmed[uuid] && confirmed[uuid].state ? confirmed[uuid].state : null,\n        pendingConfirmation: candidates[uuid] && Number(candidates[uuid].count || 0) > 0 ? {\n            state: candidates[uuid].state || null,\n            count: Number(candidates[uuid].count || 0),\n            required: confirmsRequired,\n            firstSeenGraceActive: !!firstSeenAt[uuid] && now - Number(firstSeenAt[uuid]) < firstSeenGraceMs,\n            firstSeenGraceUntil: firstSeenAt[uuid] ? Number(firstSeenAt[uuid]) + firstSeenGraceMs : null\n        } : null,\n        indicators: {\n            bacnet: hb && hb.health ? (hb.health.ok === false ? 'error' : (hb.health.ok === true ? 'ok' : 'unknown')) : 'unknown',\n            mqtt: hb && hb.mqtt ? (hb.mqtt.ok === false ? 'error' : (hb.mqtt.ok === true ? 'ok' : 'unknown')) : 'unknown',\n            buffer: hb && hb.buffer ? (hb.buffer.state || (hb.buffer.ok === false ? 'error' : (hb.buffer.ok === true ? 'ok' : 'unknown'))) : 'unknown',\n            supervisor: hb && hb.supervisor ? (Array.isArray(hb.supervisor.unhealthy) && hb.supervisor.unhealthy.length ? 'error' : 'ok') : 'unknown'\n        },\n        recentTransitions: (historyByUuid[uuid] || []).slice().reverse(),\n        enrolled: !!current.enrolled\n    };\n}).sort(function (a, b) { return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }); });\n\nconst summary = { total: devices.length, ok: 0, warning: 0, high: 0, critical: 0, heartbeatMissing: 0 };\ndevices.forEach(function (device) {\n    const severity = Object.prototype.hasOwnProperty.call(summary, device.severity) ? device.severity : 'warning';\n    summary[severity] += 1;\n    if (!device.hbOk) summary.heartbeatMissing += 1;\n});\n\nconst startedAt = Number(flow.get('fleetStartedAt') || 0);\nconst lastHeartbeatAt = Number(flow.get('fleetLastHeartbeatAt') || 0) || null;\nconst lastPollAt = Number(flow.get('fleetLastPollAt') || 0) || null;\nconst lastError = flow.get('fleetLastError') || flow.get('fleetTeamsLastError') || null;\nconst pendingConfirmations = Object.keys(candidates).filter(function (uuid) {\n    return state[uuid] && Number(candidates[uuid] && candidates[uuid].count || 0) > 0;\n}).map(function (uuid) {\n    return {\n        uuid: uuid,\n        name: state[uuid].name || uuid,\n        observedState: state[uuid].state || null,\n        confirmedState: confirmed[uuid] && confirmed[uuid].state ? confirmed[uuid].state : 'ok',\n        count: Number(candidates[uuid].count || 0),\n        required: confirmsRequired,\n        firstSeenGraceActive: !!firstSeenAt[uuid] && now - Number(firstSeenAt[uuid]) < firstSeenGraceMs,\n        firstSeenGraceUntil: firstSeenAt[uuid] ? Number(firstSeenAt[uuid]) + firstSeenGraceMs : null\n    };\n});\nconst lastEvaluationAt = Number(flow.get('fleetLastEvaluationAt') || 0) || null;\nconst snapshot = {\n    generatedAt: now,\n    lastEvaluationAt: lastEvaluationAt,\n    nextPollAt: lastPollAt ? lastPollAt + pollIntervalMs : null,\n    pollIntervalMs: pollIntervalMs,\n    pendingConfirmations: pendingConfirmations,\n    grace: !!startedAt && now - startedAt < 300000,\n    sourceStatus: {\n        balena: { ok: !!lastPollAt && !flow.get('fleetLastError'), lastSuccessAt: lastPollAt, lastError: flow.get('fleetLastError') || null },\n        mqtt: { ok: !!lastHeartbeatAt && now - lastHeartbeatAt <= offlineGraceMs, lastMessageAt: lastHeartbeatAt },\n        teams: { configured: !!teamsWebhook, lastSuccessAt: Number(flow.get('fleetTeamsLastSuccessAt') || 0) || null, lastError: flow.get('fleetTeamsLastError') || null }\n    },\n    summary: summary,\n    devices: devices,\n    recentTransitions: history.slice(-50).reverse(),\n    lastError: lastError,\n    notice: msg.snapshotNotice || null,\n    admin: {\n        fleetName: String(cfg.fleetName || 'Watchdog Hub').trim() || 'Watchdog Hub',\n        mqtt: {\n            host: String(cfg.mqttHost || 'iot.energymgt.io'),\n            port: Number(cfg.mqttPort) || 1883,\n            topicPattern: String(cfg.mqttTopicPattern || 'bacnet/gateway/{uuid}/heartbeat'),\n            qos: 1,\n            retain: true,\n            brokerEditableInNodeRed: true\n        },\n        balena: {\n            configured: !!balenaToken && !!balenaAppId,\n            appId: balenaAppId,\n            tokenSet: !!balenaToken,\n            tokenHint: hintSecret(balenaToken),\n            source: cfg.balenaToken ? 'ui' : (env.get('BALENA_API_TOKEN') ? 'env' : 'none')\n        },\n        teams: {\n            configured: !!teamsWebhook,\n            urlHint: hintUrl(teamsWebhook),\n            source: cfg.teamsWebhookUrl ? 'ui' : (env.get('TEAMS_WEBHOOK_URL') ? 'env' : 'none')\n        },\n        settings: {\n            heartbeatTtlDays: heartbeatTtlDays,\n            offlineGraceMinutes: Math.round(offlineGraceMs / 60000),\n            firstSeenGraceMinutes: Math.round(firstSeenGraceMs / 60000),\n            confirmsRequired: confirmsRequired,\n            pollIntervalMs: pollIntervalMs\n        },\n        enrolled: Object.keys(flow.get('fleetEnrolledDevices') || {}).map(function (uuid) {\n            const item = (flow.get('fleetEnrolledDevices') || {})[uuid] || {};\n            return {\n                uuid: uuid,\n                name: item.name || uuid,\n                enrolledAt: item.enrolledAt || null,\n                source: item.source || 'manual'\n            };\n        })\n    }\n};\nflow.set('fleetSnapshot', snapshot);\nmsg.topic = 'fleet_snapshot';\nmsg.payload = snapshot;\nif (msg._uibOrigin) msg._uib = { originator: msg._uibOrigin };\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 760,
+        "y": 500,
+        "wires": [
+            [
+                "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "d5ca13e2b9f46104",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-uibuilder": "7.5.0"
+        }
+    },
+    {
+        "id": "d5ca13e2b9f46105",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Record Teams success",
+        "func": "const code = Number(msg.statusCode || 0) || 0;\nconst retryCount = Number(msg.teamsRetryCount || 0);\nconst maxRetries = 2;\nconst request = msg.teamsRequest || null;\nconst snapshot = { topic: 'fleet_state_changed' };\n\nif (code >= 200 && code < 300) {\n    flow.set('fleetTeamsLastError', null);\n    flow.set('fleetTeamsLastSuccessAt', Date.now());\n    node.status({ fill: 'green', shape: 'dot', text: 'Teams HTTP ' + code });\n    return [snapshot, null];\n}\n\nconst retryable = code === 429 || code >= 500 || code === 0 || !!msg.error;\nif (retryable && retryCount < maxRetries && request && request.url) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'Teams retry ' + (retryCount + 1) + '/' + maxRetries });\n    return [null, {\n        method: request.method || 'POST',\n        url: request.url,\n        headers: request.headers || { 'Content-Type': 'application/json' },\n        payload: request.payload,\n        teamsRequest: request,\n        teamsRetryCount: retryCount + 1\n    }];\n}\n\nconst errText = (msg.error && (msg.error.message || String(msg.error)))\n    || ('HTTP ' + (code || 'inconnu'));\nflow.set('fleetTeamsLastError', {\n    source: 'teams',\n    at: Date.now(),\n    message: errText,\n    statusCode: code || null,\n    retries: retryCount\n});\nnode.warn('Watchdog fleet Teams webhook error: ' + errText);\nnode.status({ fill: 'yellow', shape: 'ring', text: 'Teams ' + errText });\nreturn [snapshot, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1320,
+        "y": 160,
+        "wires": [
+            [
+                "d5ca13e2b9f46103"
+            ],
+            [
+                "e6db24f3ca057105"
+            ]
+        ]
+    },
+    {
+        "id": "e6db24f3ca057101",
+        "type": "inject",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Test galerie Teams (4 cartes)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 160,
+        "y": 620,
+        "wires": [
+            [
+                "e6db24f3ca057102"
+            ]
+        ]
+    },
+    {
+        "id": "e6db24f3ca057102",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Build Teams gallery",
+        "func": "const cfg = flow.get('fleetAdminConfig') || {};\nconst webhook = String(cfg.teamsWebhookUrl || env.get('TEAMS_WEBHOOK_URL') || '').trim();\nif (!webhook) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'TEAMS_WEBHOOK_URL vide' });\n    node.warn('TEAMS_WEBHOOK_URL est requis pour la galerie Teams');\n    return null;\n}\n\nfunction parisTime() {\n    return new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Paris' });\n}\n\nfunction card(title, color, state, detail) {\n    return {\n        method: 'POST',\n        url: webhook,\n        headers: { 'Content-Type': 'application/json' },\n        payload: {\n            type: 'message',\n            attachments: [{\n                contentType: 'application/vnd.microsoft.teams.card.adaptive',\n                contentUrl: null,\n                content: {\n                    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',\n                    type: 'AdaptiveCard',\n                    version: '1.4',\n                    body: [\n                        { type: 'TextBlock', size: 'Large', weight: 'Bolder', text: title, wrap: true, color: color },\n                        { type: 'TextBlock', text: 'Carte de simulation — aucune alarme réelle', wrap: true, isSubtle: true },\n                        { type: 'FactSet', facts: [\n                            { title: 'Source', value: 'HUB de supervision' },\n                            { title: 'Appareil', value: 'Gateway Démo' },\n                            { title: 'État', value: state },\n                            { title: 'Détail', value: detail },\n                            { title: 'Quand', value: parisTime() }\n                        ] }\n                    ]\n                }\n            }]\n        }\n    };\n}\n\nnode.status({ fill: 'blue', shape: 'dot', text: '4 simulations en file' });\nreturn [[\n    card('[SIMULATION] Avertissement — HUB Watchdog Hub', 'warning', 'Cloud Balena indisponible', 'Heartbeat MQTT reçu : la collecte locale peut continuer.'),\n    card('[SIMULATION] Alerte haute — HUB Watchdog Hub', 'attention', 'Heartbeat absent', 'Balena est joignable mais le watchdog applicatif ne répond plus.'),\n    card('[SIMULATION] Critique — HUB Watchdog Hub', 'attention', 'Gateway hors service', 'Balena offline et heartbeat MQTT absent depuis plus de 5 minutes.'),\n    card('[SIMULATION] Retour à la normale — HUB Watchdog Hub', 'good', 'Opérationnel', 'Balena et heartbeat MQTT sont de nouveau disponibles.')\n]];",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 430,
+        "y": 620,
+        "wires": [
+            [
+                "e6db24f3ca057103"
+            ]
+        ]
+    },
+    {
+        "id": "e6db24f3ca057103",
+        "type": "delay",
+        "z": "c4b9e2d1a8f35001",
+        "name": "1 carte / 2 secondes",
+        "pauseType": "rate",
+        "timeout": "2",
+        "timeoutUnits": "seconds",
+        "rate": "1",
+        "nbRateUnits": "2",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 690,
+        "y": 620,
+        "wires": [
+            [
+                "e6db24f3ca057104"
+            ]
+        ]
+    },
+    {
+        "id": "e6db24f3ca057104",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Stash Teams request",
+        "func": "if (!msg.teamsRequest) {\n    msg.teamsRequest = {\n        method: msg.method || 'POST',\n        url: msg.url,\n        headers: msg.headers,\n        payload: msg.payload\n    };\n}\nif (!Number.isFinite(Number(msg.teamsRetryCount))) msg.teamsRetryCount = 0;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 960,
+        "y": 160,
+        "wires": [
+            [
+                "c4b9e2d1a8f35006"
+            ]
+        ]
+    },
+    {
+        "id": "e6db24f3ca057105",
+        "type": "delay",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Teams retry 2s",
+        "pauseType": "delay",
+        "timeout": "2",
+        "timeoutUnits": "seconds",
+        "rate": "1",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 1320,
+        "y": 220,
+        "wires": [
+            [
+                "e6db24f3ca057104"
+            ]
+        ]
+    }
+]

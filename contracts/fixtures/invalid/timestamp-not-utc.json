@@ -1,0 +1,11 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "01K3N7R4VQK8M2P9X5C6B1A0ZT",
+  "flow_id": "METEO_01",
+  "event_type": "data_received",
+  "status": "success",
+  "timestamp": "2026-08-24T12:00:00+02:00",
+  "source_id": "SRC_METEOSWISS_OGD",
+  "connector_id": "CONN_API_METEO",
+  "destination_id": "DST_SQL_METEO"
+}

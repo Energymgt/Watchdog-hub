@@ -1,0 +1,15 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "01K3N7R4VQK8M2P9X5C6B1A0ZT",
+  "flow_id": "CSV_OASSIS_01",
+  "event_type": "execution_completed",
+  "status": "success",
+  "timestamp": "2026-08-24T11:00:00Z",
+  "source_id": "SRC_SMB_OASSIS",
+  "connector_id": "CONN_CSV_TO_SQL",
+  "destination_id": "DST_SQL_PLUTO",
+  "execution_id": "run-1",
+  "records": [
+    { "tag": "MUC001", "value": 12.3 }
+  ]
+}

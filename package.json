@@ -1,0 +1,15 @@
+{
+  "name": "watchdog-hub-runtime",
+  "version": "1.2.3",
+  "private": true,
+  "description": "Runtime Node-RED/UIbuilder du dashboard Watchdog Hub",
+  "scripts": {
+    "test": "node --test tests/watchdog.event.v1.test.js tests/watchdog.ingest.v1.test.js tests/watchdog.anomalies.v1.test.js tests/watchdog.incidents.v1.test.js tests/watchdog.actions.v1.test.js tests/watchdog.resolutions.v1.test.js",
+    "start:ingest": "node runtime/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "node-red-contrib-uibuilder": "7.5.0",
+    "vue": "3.4.21"
+  }
+}

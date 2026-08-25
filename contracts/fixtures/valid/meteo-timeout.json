@@ -1,0 +1,16 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
+  "flow_id": "METEO_01",
+  "event_type": "timeout",
+  "status": "failure",
+  "timestamp": "2026-08-24T10:10:00.123Z",
+  "source_id": "SRC_METEOSWISS_OGD",
+  "connector_id": "CONN_API_METEO",
+  "destination_id": "DST_SQL_METEO",
+  "execution_id": "meteo-20260824T1010Z",
+  "duration_ms": 30000,
+  "error_signature": "http_timeout:ogd-smn",
+  "correlation_key": "METEO_01|availability|http_timeout:ogd-smn",
+  "producer": "api-meteo"
+}

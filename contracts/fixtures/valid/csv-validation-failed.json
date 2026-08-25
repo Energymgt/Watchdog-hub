@@ -1,0 +1,18 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "01K3N7R7YQK8M2P9X5C6B1A0ZW",
+  "flow_id": "CSV_OASSIS_01",
+  "event_type": "validation_failed",
+  "status": "failure",
+  "timestamp": "2026-08-24T13:00:00Z",
+  "source_id": "SRC_SMB_OASSIS",
+  "connector_id": "CONN_CSV_TO_SQL",
+  "destination_id": "DST_SQL_PLUTO",
+  "execution_id": "run-oassis-bad-20260824T1300Z",
+  "records": 0,
+  "error_signature": "validation:parse_csv",
+  "producer": "csv-to-sql",
+  "metadata": {
+    "file_name": "MUC_bad.csv"
+  }
+}

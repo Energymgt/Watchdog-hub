@@ -1,0 +1,28 @@
+{
+  "flow_id": "CSV_OASSIS_01",
+  "version": 1,
+  "name": "CSV OASSIS vers SQL PLUTO",
+  "source_id": "SRC_SMB_OASSIS",
+  "connector_id": "CONN_CSV_TO_SQL",
+  "destination_id": "DST_SQL_PLUTO",
+  "health_contract": {
+    "clauses": [
+      {
+        "id": "availability",
+        "kind": "event_failure",
+        "event_types": [
+          "validation_failed",
+          "destination_error",
+          "timeout",
+          "execution_failed",
+          "connector_error"
+        ],
+        "success_types": [
+          "execution_completed",
+          "data_received"
+        ],
+        "note": "Écart à un événement d'échec déjà reçu. Aucune clause « un fichier / heure » : SLA non décidé."
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "01K3N7R4VQK8M2P9X5C6B1A0ZT",
+  "flow_id": "METEO_01",
+  "event_type": "timeout",
+  "status": "failure",
+  "timestamp": "2026-08-24T10:10:00Z",
+  "source_id": "SRC_METEOSWISS_OGD",
+  "connector_id": "CONN_API_METEO",
+  "destination_id": "DST_SQL_METEO"
+}

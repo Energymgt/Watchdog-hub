@@ -1,0 +1,65 @@
+version: "3.8"
+
+# Stack siège Swarm / Portainer — Watchdog Hub
+# Build : .\watchdog-hub\publish.ps1
+# Variables : watchdog-hub/.env.example
+# UI opérateur : http://<serveur>:1884/watchdog-hub
+# Éditeur Node-RED 5.0.4 : http://<serveur>:1884 (protégé par USERNAME/PASSWORD)
+# Backup volume : docker run --rm -v <stack>_watchdog_hub_data:/data -v ${PWD}:/backup alpine tar czf /backup/watchdog_hub_data.tgz /data
+# FORCE_COPY_FLOWS=true remplace /data/flows.json par le flow de l'image (sauvegarder avant).
+
+services:
+  watchdog-hub:
+    image: ${WATCHDOG_HUB_IMAGE}
+    environment:
+      TZ: Europe/Paris
+      USERNAME: ${USERNAME:-admin}
+      PASSWORD: ${PASSWORD}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
+      BALENA_API_TOKEN: ${BALENA_API_TOKEN}
+      BALENA_APP_ID: ${BALENA_APP_ID}
+      FLEET_HEARTBEAT_TTL_DAYS: ${FLEET_HEARTBEAT_TTL_DAYS:-30}
+      FORCE_COPY_FLOWS: ${FORCE_COPY_FLOWS:-false}
+      WATCHDOG_INGEST_BIND: ${WATCHDOG_INGEST_BIND:-0.0.0.0}
+      WATCHDOG_INGEST_PORT: ${WATCHDOG_INGEST_PORT:-8091}
+      WATCHDOG_REGISTRY_PATH: ${WATCHDOG_REGISTRY_PATH:-/data/watchdog-registry.sqlite}
+      # Vide = pas d'auth (dev / tests). Production : OBLIGATOIRE avant d'exposer 8091.
+      WATCHDOG_INGEST_TOKEN: ${WATCHDOG_INGEST_TOKEN:-}
+    volumes:
+      - watchdog_hub_data:/data
+    # 8091 reste publié pour A2 (producteurs CSV/Météo sur un autre hôte/stack).
+    # Production : poser WATCHDOG_INGEST_TOKEN et/ou restreindre l'interface hôte
+    # (ex. 10.x.x.x:8091:8091). Ne pas publier 8091 sur un réseau public sans token.
+    ports:
+      - "1884:1880"
+      - "8091:8091"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "editor=$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:1880/ || true); ui=$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:1880/watchdog-hub/ || true); ingest=$$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8091/healthz || true); ([ \"$$editor\" = \"200\" ] || [ \"$$editor\" = \"401\" ]) && ([ \"$$ui\" = \"200\" ] || [ \"$$ui\" = \"401\" ]) && [ \"$$ingest\" = \"200\" ]",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 45s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 0
+
+volumes:
+  watchdog_hub_data:

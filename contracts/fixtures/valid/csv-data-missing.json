@@ -1,0 +1,18 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "01K3N7R6XQK8M2P9X5C6B1A0ZV",
+  "flow_id": "CSV_OASSIS_01",
+  "event_type": "data_missing",
+  "status": "info",
+  "timestamp": "2026-08-24T12:00:00Z",
+  "source_id": "SRC_SMB_OASSIS",
+  "connector_id": "CONN_CSV_TO_SQL",
+  "destination_id": "DST_SQL_PLUTO",
+  "execution_id": "scan-oassis-20260824T1200Z",
+  "records": 0,
+  "producer": "csv-to-sql",
+  "metadata": {
+    "scan": true,
+    "matched_files": 0
+  }
+}

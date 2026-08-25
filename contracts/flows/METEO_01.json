@@ -1,0 +1,28 @@
+{
+  "flow_id": "METEO_01",
+  "version": 1,
+  "name": "Import Auto MeteoSwiss OGD",
+  "source_id": "SRC_METEOSWISS_OGD",
+  "connector_id": "CONN_API_METEO",
+  "destination_id": "DST_SQL_METEO",
+  "health_contract": {
+    "clauses": [
+      {
+        "id": "availability",
+        "kind": "event_failure",
+        "event_types": [
+          "connector_error",
+          "timeout",
+          "destination_error",
+          "execution_failed",
+          "validation_failed"
+        ],
+        "success_types": [
+          "data_received",
+          "execution_completed"
+        ],
+        "note": "Écart à un événement d'échec déjà reçu. Aucune clause de fraîcheur : seuil 20 min vs 30 min non décidé."
+      }
+    ]
+  }
+}
