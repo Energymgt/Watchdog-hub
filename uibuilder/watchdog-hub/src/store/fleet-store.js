@@ -21,7 +21,7 @@
             sourceFilter: 'all',
             sortBy: 'severity',
             selectedDevice: null,
-            view: 'fleet',
+            view: 'overview',
             admin: null,
             adminSaving: false
         });
@@ -117,7 +117,9 @@
         }
 
         function setView(view) {
-            state.view = view === 'admin' || view === 'flows' ? view : 'fleet';
+            state.view = ['overview', 'incidents', 'flows', 'fleet', 'admin'].indexOf(view) >= 0
+                ? view
+                : 'overview';
             if (state.view !== 'fleet') state.selectedDevice = null;
         }
 

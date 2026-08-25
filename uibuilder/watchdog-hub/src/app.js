@@ -3,6 +3,7 @@
 
     var Vue = global.Vue;
     var fleet = global.WatchdogHub;
+    var router = fleet.hashRouter;
     var store = fleet.createFleetStore(Vue);
     var flowsStore = fleet.createFlowsStore(Vue);
     var client;
@@ -79,23 +80,25 @@
             });
 
             function viewFromHash() {
-                if (global.location.hash === '#admin') return 'admin';
-                if (global.location.hash === '#flows') return 'flows';
-                return 'fleet';
+                return router.parse(global.location.hash);
             }
 
-            function setView(view) {
+            function setView(view, incidentId) {
                 store.setView(view);
-                var nextHash = view === 'admin' ? '#admin' : (view === 'flows' ? '#flows' : '');
+                var nextHash = router.format(view, incidentId);
                 if (global.location.hash !== nextHash) {
                     global.location.hash = nextHash;
                 }
+                if (view === 'overview' || view === 'flows' || view === 'incidents') loadFlows(false);
             }
 
             function onHashChange() {
-                var view = viewFromHash();
-                store.setView(view);
-                if (view === 'flows') loadFlows(false);
+                var route = viewFromHash();
+                store.setView(route.view);
+                if (route.view === 'overview' || route.view === 'flows' || route.view === 'incidents') {
+                    loadFlows(false);
+                }
+                if (route.incidentId) flowsClient.requestIncident(route.incidentId);
             }
 
             function announceSnapshot() {
@@ -127,10 +130,21 @@
                 incidentOpener.value = opener || null;
                 flowsStore.beginMutation();
                 flowsClient.requestIncident(incident.incident_id);
+                if (store.state.view !== 'incidents' || router.parse(global.location.hash).incidentId !== incident.incident_id) {
+                    global.location.hash = router.format('incidents', incident.incident_id);
+                }
             }
 
             function closeIncident() {
                 flowsStore.selectIncident(null);
+                if (router.parse(global.location.hash).incidentId) {
+                    global.location.hash = router.format('incidents');
+                }
+            }
+
+            function showFlowIncidents(flow) {
+                flowsStore.state.query = flow.flow_id;
+                setView('incidents');
             }
 
             function addIncidentNote(data) {
@@ -236,15 +250,18 @@
             });
 
             Vue.onMounted(function () {
-                var initialView = viewFromHash();
-                store.setView(initialView);
+                var initialRoute = viewFromHash();
+                store.setView(initialRoute.view);
                 global.addEventListener('hashchange', onHashChange);
                 timerId = global.setInterval(function () {
                     now.value = Date.now();
                 }, 15000);
                 flowsClient.start();
                 client.start();
-                if (initialView === 'flows') loadFlows(false);
+                if (initialRoute.view === 'overview' || initialRoute.view === 'flows' || initialRoute.view === 'incidents') {
+                    loadFlows(false);
+                }
+                if (initialRoute.incidentId) flowsClient.requestIncident(initialRoute.incidentId);
             });
 
             Vue.onBeforeUnmount(function () {
@@ -274,6 +291,7 @@
                 loadFlows: loadFlows,
                 openIncident: openIncident,
                 closeIncident: closeIncident,
+                showFlowIncidents: showFlowIncidents,
                 addIncidentNote: addIncidentNote,
                 transitionIncident: transitionIncident,
                 resolveIncident: resolveIncident,
@@ -292,7 +310,7 @@
             '<div class="app-shell">' +
                 '<fleet-header :fleet-name="fleetName" :generated-at="state.snapshot && state.snapshot.generatedAt" :last-evaluation-at="state.snapshot && state.snapshot.lastEvaluationAt" :next-poll-at="state.snapshot && state.snapshot.nextPollAt" :now="now" :stale="stale" :connected="state.connected === true" :source-status="state.sourceStatus" :inert="modalOpen ? true : undefined"></fleet-header>' +
                 '<app-nav :view="state.view" :inert="modalOpen ? true : undefined" @update:view="setView"></app-nav>' +
-                '<main id="main-content" class="dashboard" tabindex="-1" :aria-busy="state.view === \'flows\' ? (flowsState.refreshing || flowsState.mutating ? \'true\' : \'false\') : (state.refreshing || state.adminSaving ? \'true\' : \'false\')" :inert="modalOpen ? true : undefined">' +
+                '<main id="main-content" class="dashboard" tabindex="-1" :aria-busy="(state.view === \'overview\' || state.view === \'flows\' || state.view === \'incidents\') ? (flowsState.refreshing || flowsState.mutating ? \'true\' : \'false\') : (state.refreshing || state.adminSaving ? \'true\' : \'false\')" :inert="modalOpen ? true : undefined">' +
                     '<p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</p>' +
                     '<ui-banner v-if="state.connected === false" kind="warning">Connexion au serveur interrompue. Reconnexion automatique en cours…</ui-banner>' +
                     '<ui-banner v-if="state.view !== \'flows\' && state.lastError && state.snapshot" kind="error">{{ state.lastError }}</ui-banner>' +
@@ -302,8 +320,11 @@
                         '<state-panel v-else-if="state.loading" kind="loading" title="Chargement de l’administration" message="Récupération de la configuration…" :busy="true"></state-panel>' +
                         '<state-panel v-else kind="error" title="Configuration indisponible" :message="state.lastError || \'Aucun snapshot n’a été reçu.\'" action-label="Réessayer" @retry="retry"></state-panel>' +
                     '</template>' +
-                    '<template v-else-if="state.view === \'flows\'">' +
-                        '<flows-page :state="flowsState" :now="now" @refresh="loadFlows(true)" @retry="loadFlows(false)" @select-incident="openIncident"></flows-page>' +
+                    '<template v-else-if="state.view === \'overview\'">' +
+                        '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :incidents="flowsState.incidents" :flows="flowsState.flows" :loading="flowsState.loading || flowsState.refreshing" :now="now" @open-incident="openIncident" @open-view="setView"></overview-page>' +
+                    '</template>' +
+                    '<template v-else-if="state.view === \'flows\' || state.view === \'incidents\'">' +
+                        '<flows-page :state="flowsState" :section="state.view" :now="now" @refresh="loadFlows(true)" @retry="loadFlows(false)" @select-incident="openIncident" @show-incidents="showFlowIncidents"></flows-page>' +
                     '</template>' +
                     '<template v-else-if="state.snapshot">' +
                         '<fleet-kpis :summary="state.summary" :loading="state.refreshing"></fleet-kpis>' +

@@ -6,10 +6,11 @@
     global.WatchdogHub.components = global.WatchdogHub.components || {};
     global.WatchdogHub.components.FlowsPage = {
         name: 'FlowsPage',
-        emits: ['refresh', 'retry', 'select-incident'],
+        emits: ['refresh', 'retry', 'select-incident', 'show-incidents'],
         props: {
             state: { type: Object, required: true },
-            now: { type: Number, default: Date.now }
+            now: { type: Number, default: Date.now },
+            section: { type: String, default: 'all' }
         },
         computed: {
             normalizedQuery: function () {
@@ -60,12 +61,12 @@
                 '<state-panel v-if="state.loading && !state.snapshot" kind="loading" title="Chargement des flux" message="Lecture du registre Watchdog..." :busy="true"></state-panel>' +
                 '<state-panel v-else-if="!state.snapshot" kind="error" title="Flux indisponibles" :message="state.lastError || \'Aucune donnée Flux n’a été reçue.\'" action-label="Réessayer" @retry="$emit(\'retry\')"></state-panel>' +
                 '<template v-else>' +
-                    '<div class="flows-hero"><div><p class="eyebrow">Registre opérationnel</p><h2>Flux et incidents</h2><p>État calculé par les contrats de santé Watchdog.</p></div><small>Dernière lecture : {{ formatDateTime(state.snapshot.generatedAt) }}</small></div>' +
+                    '<div class="flows-hero"><div><p class="eyebrow">Registre opérationnel</p><h2>{{ section === \'incidents\' ? \'Incidents\' : (section === \'flows\' ? \'Flux supervisés\' : \'Flux et incidents\') }}</h2><p>État calculé par les contrats de santé Watchdog.</p></div><small>Dernière lecture : {{ formatDateTime(state.snapshot.generatedAt) }}</small></div>' +
                     '<flows-kpis :summary="state.summary" :loading="state.refreshing"></flows-kpis>' +
                     '<flows-filter-bar :query="state.query" :status="state.statusFilter" :incident-state="state.incidentStateFilter" :refreshing="state.refreshing" @update:query="state.query = $event" @update:status="state.statusFilter = $event" @update:incident-state="state.incidentStateFilter = $event" @refresh="$emit(\'refresh\')" @reset="resetFilters"></flows-filter-bar>' +
-                    '<p class="results-summary">{{ filteredFlows.length }} flux et {{ filteredIncidents.length }} incident{{ filteredIncidents.length > 1 ? \'s\' : \'\' }} affichés.</p>' +
-                    '<flow-list :flows="filteredFlows" :refreshing="state.refreshing"></flow-list>' +
-                    '<incident-list :incidents="filteredIncidents" :refreshing="state.refreshing" @select="forwardSelection"></incident-list>' +
+                    '<p class="results-summary"><template v-if="section !== \'incidents\'">{{ filteredFlows.length }} flux</template><template v-if="section === \'all\'"> et </template><template v-if="section !== \'flows\'">{{ filteredIncidents.length }} incident{{ filteredIncidents.length > 1 ? \'s\' : \'\' }}</template> affiché<span v-if="filteredFlows.length + filteredIncidents.length > 1">s</span>.</p>' +
+                    '<flow-list v-if="section !== \'incidents\'" :flows="filteredFlows" :refreshing="state.refreshing" @show-incidents="$emit(\'show-incidents\', $event)"></flow-list>' +
+                    '<incident-list v-if="section !== \'flows\'" :incidents="filteredIncidents" :refreshing="state.refreshing" @select="forwardSelection"></incident-list>' +
                 '</template>' +
             '</div>'
     };

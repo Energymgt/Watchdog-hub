@@ -6,20 +6,24 @@
     global.WatchdogHub.components = global.WatchdogHub.components || {};
     global.WatchdogHub.components.FlowList = {
         name: 'FlowList',
+        emits: ['show-incidents'],
         props: {
             flows: { type: Array, default: function () { return []; } },
             refreshing: { type: Boolean, default: false }
         },
         methods: {
             meta: formatters.flowStatusMeta,
-            reason: formatters.reasonLabel
+            reason: formatters.reasonLabel,
+            showIncidents: function (flow) {
+                this.$emit('show-incidents', flow);
+            }
         },
         template:
             '<section class="flows-section" aria-labelledby="flows-list-title" :aria-busy="refreshing ? \'true\' : \'false\'">' +
                 '<div class="section-heading"><h2 id="flows-list-title">Flux supervisés</h2><span class="activity-count">{{ flows.length }}</span></div>' +
                 '<div v-if="flows.length" class="table-wrap">' +
                     '<table class="flows-table"><caption class="sr-only">État des flux supervisés</caption>' +
-                        '<thead><tr><th scope="col">Flux</th><th scope="col">Source</th><th scope="col">Connecteur</th><th scope="col">Destination</th><th scope="col">État</th><th scope="col">Diagnostic</th></tr></thead>' +
+                        '<thead><tr><th scope="col">Flux</th><th scope="col">Source</th><th scope="col">Connecteur</th><th scope="col">Destination</th><th scope="col">État</th><th scope="col">Diagnostic</th><th scope="col">Action</th></tr></thead>' +
                         '<tbody><tr v-for="flow in flows" :key="flow.flow_id">' +
                             '<td><span class="device-name">{{ flow.name }}</span><span class="device-id">{{ flow.flow_id }}</span></td>' +
                             '<td>{{ flow.source_id || \'Non disponible\' }}</td>' +
@@ -27,6 +31,7 @@
                             '<td>{{ flow.destination_id || \'Non disponible\' }}</td>' +
                             '<td><span class="status-badge" :class="\'status-badge--\' + meta(flow.status).tone">{{ meta(flow.status).label }}</span></td>' +
                             '<td>{{ reason(flow.status_reason) }}</td>' +
+                            '<td><button class="detail-button" type="button" @click="showIncidents(flow)">Incidents liés</button></td>' +
                         '</tr></tbody>' +
                     '</table>' +
                 '</div>' +
