@@ -4,6 +4,13 @@
     var flowFormatters = global.WatchdogHub.flowsFormatters;
     var formatters = global.WatchdogHub.formatters;
 
+    var HEALTH_META = {
+        ok: { token: 'HEALTHY', fill: 10, tone: 'ok' },
+        degraded: { token: 'DEGRADED', fill: 8, tone: 'warning' },
+        down: { token: 'DOWN', fill: 3, tone: 'critical' },
+        unknown: { token: 'UNKNOWN', fill: 0, tone: 'unknown' }
+    };
+
     global.WatchdogHub.components = global.WatchdogHub.components || {};
     global.WatchdogHub.components.OverviewPage = {
         name: 'OverviewPage',
@@ -17,6 +24,9 @@
             now: { type: Number, default: Date.now }
         },
         computed: {
+            affectedFlows: function () {
+                return (this.flowSummary.degraded || 0) + (this.flowSummary.down || 0);
+            },
             activeIncidents: function () {
                 return this.incidents.filter(function (incident) {
                     return incident.state !== 'RESOLU' && incident.state !== 'CLOS';
@@ -25,26 +35,31 @@
                         - flowFormatters.incidentStateMeta(a.state).rank;
                     return rank || (new Date(a.opened_at).getTime() || 0)
                         - (new Date(b.opened_at).getTime() || 0);
-                }).slice(0, 5);
+                }).slice(0, 6);
             },
-            degradedFlows: function () {
-                return this.flows.filter(function (flow) {
-                    return flow.status === 'down' || flow.status === 'degraded';
-                }).slice(0, 5);
+            watchedFlows: function () {
+                var rank = { down: 0, degraded: 1, unknown: 2, ok: 3 };
+                return this.flows.slice().sort(function (a, b) {
+                    return (rank[a.status] || 2) - (rank[b.status] || 2);
+                });
             }
         },
         methods: {
             incidentMeta: flowFormatters.incidentStateMeta,
-            flowMeta: flowFormatters.flowStatusMeta,
+            healthMeta: function (status) {
+                return HEALTH_META[status] || HEALTH_META.unknown;
+            },
+            flowName: function (flowId) {
+                var match = this.flows.filter(function (flow) {
+                    return flow.flow_id === flowId;
+                })[0];
+                return match ? match.name : flowId;
+            },
             formatRelative: function (value) {
                 return formatters.formatRelative(value, this.now);
             },
-            badgeState: function (tone) {
-                if (tone === 'critical') return 'dead';
-                if (tone === 'high') return 'heartbeat_missing';
-                if (tone === 'warning') return 'cloud_down';
-                if (tone === 'ok') return 'ok';
-                return 'unknown';
+            kpiTone: function (count, tone) {
+                return count > 0 ? tone : 'unknown';
             },
             openIncident: function (incident) {
                 this.$emit('open-incident', incident);
@@ -53,34 +68,49 @@
         template:
             '<section class="overview-page" aria-labelledby="overview-title">' +
                 '<div class="overview-hero">' +
-                    '<div><p class="eyebrow">Opérations</p><h2 id="overview-title">Vue d’ensemble</h2><p>Priorités de supervision et état consolidé des systèmes.</p></div>' +
-                    '<ui-button variant="secondary" @click="$emit(\'open-view\', \'incidents\')">Voir tous les incidents</ui-button>' +
+                    '<h2 id="overview-title">Operational Overview</h2>' +
                 '</div>' +
                 '<section class="overview-kpis" aria-label="Résumé opérationnel" :aria-busy="loading ? \'true\' : \'false\'">' +
-                    '<kpi-card label="Incidents actifs" :value="flowSummary.incidentsActive || 0" tone="critical"></kpi-card>' +
-                    '<kpi-card label="Flux dégradés" :value="(flowSummary.degraded || 0) + (flowSummary.down || 0)" tone="warning"></kpi-card>' +
-                    '<kpi-card label="Alertes flotte" :value="fleetSummary.alerts || 0" tone="high"></kpi-card>' +
-                    '<kpi-card label="Appareils suivis" :value="fleetSummary.total || fleetSummary.devices || 0" tone="ok"></kpi-card>' +
+                    '<kpi-card label="Incidents actifs" :value="flowSummary.incidentsActive || 0" :tone="kpiTone(flowSummary.incidentsActive || 0, \'critical\')" :loading="loading"></kpi-card>' +
+                    '<kpi-card label="Flux dégradés" :value="affectedFlows" :tone="kpiTone(affectedFlows, \'warning\')" :loading="loading"></kpi-card>' +
+                    '<kpi-card label="Alertes flotte" :value="fleetSummary.alerts || 0" :tone="kpiTone(fleetSummary.alerts || 0, \'high\')" :loading="loading"></kpi-card>' +
+                    '<kpi-card label="Flux total" :value="flowSummary.total || 0" tone="unknown" :loading="loading"></kpi-card>' +
                 '</section>' +
                 '<div class="overview-grid">' +
                     '<section class="overview-panel" aria-labelledby="priority-incidents-title">' +
-                        '<div class="section-heading"><div><p class="eyebrow">À traiter maintenant</p><h3 id="priority-incidents-title">Incidents prioritaires</h3></div><span class="activity-count">{{ flowSummary.incidentsActive || 0 }} actifs</span></div>' +
+                        '<div class="section-heading">' +
+                            '<h3 id="priority-incidents-title">À traiter maintenant</h3>' +
+                            '<span class="activity-count">{{ flowSummary.incidentsActive || 0 }}</span>' +
+                        '</div>' +
                         '<ol v-if="activeIncidents.length" class="priority-list">' +
                             '<li v-for="incident in activeIncidents" :key="incident.incident_id">' +
-                                '<button type="button" class="priority-list__item" @click="openIncident(incident)">' +
-                                    '<span><strong>{{ incident.flow_id }}</strong><small>{{ incident.error_signature || \'Incident sans signature\' }}</small></span>' +
-                                    '<span><status-badge :state="badgeState(incidentMeta(incident.state).tone)" :label="incidentMeta(incident.state).label"></status-badge><small>Ouvert {{ formatRelative(incident.opened_at) }}</small></span>' +
+                                '<button type="button" class="priority-list__item" :class="\'priority-list__item--\' + incidentMeta(incident.state).tone" @click="openIncident(incident)">' +
+                                    '<span class="priority-list__top">' +
+                                        '<span class="priority-list__id">{{ incident.incident_id }}</span>' +
+                                        '<span class="priority-list__meta">{{ incidentMeta(incident.state).label }} · {{ formatRelative(incident.opened_at) }}</span>' +
+                                    '</span>' +
+                                    '<strong class="priority-list__title">{{ incident.error_signature || \'Incident sans signature\' }}</strong>' +
+                                    '<small class="priority-list__context">{{ flowName(incident.flow_id) }}</small>' +
                                 '</button>' +
                             '</li>' +
                         '</ol>' +
                         '<p v-else class="empty-inline">Aucun incident actif.</p>' +
                     '</section>' +
                     '<section class="overview-panel" aria-labelledby="priority-flows-title">' +
-                        '<div class="section-heading"><div><p class="eyebrow">Diagnostic</p><h3 id="priority-flows-title">Flux à surveiller</h3></div><ui-button variant="ghost" @click="$emit(\'open-view\', \'flows\')">Ouvrir les flux</ui-button></div>' +
-                        '<ul v-if="degradedFlows.length" class="watch-list">' +
-                            '<li v-for="flow in degradedFlows" :key="flow.flow_id"><span><strong>{{ flow.name }}</strong><small>{{ flow.status_reason }}</small></span><status-badge :state="badgeState(flowMeta(flow.status).tone)" :label="flowMeta(flow.status).label"></status-badge></li>' +
+                        '<div class="section-heading">' +
+                            '<h3 id="priority-flows-title">Santé des flux</h3>' +
+                            '<button class="overview-link" type="button" @click="$emit(\'open-view\', \'flows\')">Ouvrir</button>' +
+                        '</div>' +
+                        '<ul v-if="watchedFlows.length" class="flow-health-list">' +
+                            '<li v-for="flow in watchedFlows" :key="flow.flow_id" :class="\'flow-health--\' + healthMeta(flow.status).tone">' +
+                                '<strong>{{ flow.name }}</strong>' +
+                                '<span class="flow-health-track" aria-hidden="true">' +
+                                    '<i v-for="tick in 10" :key="tick" :class="{ \'is-on\': tick <= healthMeta(flow.status).fill }"></i>' +
+                                '</span>' +
+                                '<span class="flow-health-token">{{ healthMeta(flow.status).token }}</span>' +
+                            '</li>' +
                         '</ul>' +
-                        '<p v-else class="empty-inline">Tous les flux sont opérationnels.</p>' +
+                        '<p v-else class="empty-inline">Aucun flux dans le snapshot courant.</p>' +
                     '</section>' +
                 '</div>' +
             '</section>'

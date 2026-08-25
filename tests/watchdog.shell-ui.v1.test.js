@@ -81,4 +81,45 @@ describe('contrat du shell UI Watchdog Hub', () => {
         assert.match(app, /ctrlKey/);
         assert.doesNotMatch(palette, /WATCHDOG_INGEST_TOKEN|X-Watchdog-Token/);
     });
+
+    it('structure le shell en header compact et sidebar persistante', () => {
+        const nav = fs.readFileSync(path.join(UI_ROOT, 'components/fleet/app-nav.js'), 'utf8');
+        const header = fs.readFileSync(path.join(UI_ROOT, 'components/fleet/fleet-header.js'), 'utf8');
+        const app = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
+        const css = fs.readFileSync(path.join(UI_ROOT, 'index.css'), 'utf8');
+
+        assert.match(nav, /Overview/);
+        assert.match(nav, /Opérations/);
+        assert.match(nav, /Infrastructure/);
+        assert.match(nav, /Administration/);
+        assert.match(nav, /disabled title="Non exposé par le pont UIbuilder">Anomalies/);
+        assert.match(nav, /disabled title="Non exposé par le pont UIbuilder">Événements/);
+        assert.doesNotMatch(nav, /update:view', 'anomal/);
+        assert.doesNotMatch(nav, /open-command/);
+
+        assert.match(header, /header-secondary/);
+        assert.match(header, /DEGRADED/);
+        assert.match(header, /WebSocket connected/);
+        assert.match(header, /open-command/);
+        assert.match(app, /@open-command="openCommandPalette"/);
+
+        assert.match(css, /grid-template-columns: 210px minmax\(0, 1fr\)/);
+        assert.doesNotMatch(nav, /[\u2013\u2014]/);
+        assert.doesNotMatch(header, /[\u2013\u2014]/);
+    });
+
+    it('place Overview comme console opérationnelle, pas comme table', () => {
+        const overview = fs.readFileSync(path.join(UI_ROOT, 'components/overview-page.js'), 'utf8');
+        assert.match(overview, /Operational Overview/);
+        assert.match(overview, /À traiter maintenant/);
+        assert.match(overview, /Santé des flux/);
+        assert.match(overview, /HEALTHY/);
+        assert.match(overview, /DEGRADED/);
+        assert.match(overview, /UNKNOWN/);
+        assert.match(overview, /incident_id/);
+        assert.match(overview, /error_signature/);
+        assert.doesNotMatch(overview, /CRITICAL ·/);
+        assert.doesNotMatch(overview, /Production/);
+        assert.doesNotMatch(overview, /[\u2013\u2014]/);
+    });
 });
