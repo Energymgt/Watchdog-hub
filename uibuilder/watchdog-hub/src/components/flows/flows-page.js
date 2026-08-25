@@ -42,6 +42,12 @@
                 }).slice().sort(function (a, b) {
                     return (new Date(b.opened_at).getTime() || 0) - (new Date(a.opened_at).getTime() || 0);
                 });
+            },
+            unknownBecauseNoEvents: function () {
+                return this.filteredFlows.length > 0
+                    && this.filteredFlows.every(function (flow) {
+                        return flow.status === 'unknown' && flow.status_reason === 'no_events';
+                    });
             }
         },
         methods: {
@@ -66,6 +72,7 @@
                     '<flows-kpis :summary="state.summary" :loading="state.refreshing"></flows-kpis>' +
                     '<flows-filter-bar :query="state.query" :status="state.statusFilter" :incident-state="state.incidentStateFilter" :refreshing="state.refreshing" @update:query="state.query = $event" @update:status="state.statusFilter = $event" @update:incident-state="state.incidentStateFilter = $event" @refresh="$emit(\'refresh\')" @reset="resetFilters"></flows-filter-bar>' +
                     '<p class="results-summary"><template v-if="section !== \'incidents\'">{{ filteredFlows.length }} flux</template><template v-if="section === \'all\'"> et </template><template v-if="section !== \'flows\'">{{ filteredIncidents.length }} incident{{ filteredIncidents.length > 1 ? \'s\' : \'\' }}</template> affiché<span v-if="filteredFlows.length + filteredIncidents.length > 1">s</span>.</p>' +
+                    '<ui-banner v-if="section !== \'incidents\' && unknownBecauseNoEvents" kind="info"><strong>État non déterminable.</strong> Aucun événement de santé reçu. Les états opérationnels ne peuvent pas encore être confirmés.</ui-banner>' +
                     '<div v-if="section !== \'incidents\'" class="flow-workspace"><flow-list :flows="filteredFlows" :refreshing="state.refreshing" @show-incidents="$emit(\'show-incidents\', $event)" @select="$emit(\'select-flow\', $event)"></flow-list><flow-detail :flow="selectedFlow" :rules="state.rules" :incidents="state.incidents"></flow-detail></div>' +
                     '<incident-list v-if="section !== \'flows\'" :incidents="filteredIncidents" :refreshing="state.refreshing" @select="forwardSelection"></incident-list>' +
                 '</template>' +

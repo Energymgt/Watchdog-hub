@@ -58,11 +58,13 @@
                         '<status-badge :state="systemState.state" :label="systemState.label"></status-badge>' +
                         '<span class="system-summary">{{ flowSummary.incidentsActive || 0 }} incidents · {{ (flowSummary.degraded || 0) + (flowSummary.down || 0) }} flux · {{ fleetSummary.alerts || 0 }} alertes flotte</span>' +
                         '<status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'WebSocket connecté\' : \'WebSocket déconnecté\'"></status-badge>' +
-                        '<status-badge :state="balenaState" label="Balena" announce-state></status-badge>' +
-                        '<status-badge :state="mqttState" label="MQTT" announce-state></status-badge>' +
-                        '<status-badge :state="teamsState" label="Teams" announce-state></status-badge>' +
-                        '<status-badge v-if="stale" state="heartbeat_missing" label="Données anciennes"></status-badge>' +
                     '</div>' +
+                '</div>' +
+                '<div class="header-sources" aria-label="État des sources">' +
+                    '<status-badge :state="balenaState" label="Balena" announce-state></status-badge>' +
+                    '<status-badge :state="mqttState" label="MQTT" announce-state></status-badge>' +
+                    '<status-badge :state="teamsState" label="Teams" announce-state></status-badge>' +
+                    '<status-badge v-if="stale" state="heartbeat_missing" label="Données anciennes"></status-badge>' +
                 '</div>' +
                 '<dl class="source-details">' +
                     '<div><dt>Snapshot</dt><dd :title="formatDateTime(generatedAt)">{{ formatRelative(generatedAt) }}</dd></div>' +

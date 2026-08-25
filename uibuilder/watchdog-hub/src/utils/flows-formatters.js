@@ -3,7 +3,7 @@
 
     var FLOW_STATUS_META = {
         ok: { label: 'Opérationnel', tone: 'ok', rank: 0 },
-        unknown: { label: 'Inconnu', tone: 'unknown', rank: 1 },
+        unknown: { label: 'UNKNOWN', tone: 'unknown', rank: 1 },
         degraded: { label: 'Dégradé', tone: 'warning', rank: 2 },
         down: { label: 'Indisponible', tone: 'critical', rank: 3 }
     };

@@ -1674,3 +1674,117 @@ textarea:focus {
     .incident-row__meta { justify-items: start; }
     .side-drawer { width: 100%; padding: var(--space-4); border-left: 0; }
 }
+
+/* Polish opérateur: hiérarchie header et table des flux */
+.header-meta--primary {
+    align-items: center;
+}
+
+.header-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.65rem;
+}
+
+.header-sources .status-badge {
+    font-size: 0.68rem;
+    opacity: 0.82;
+}
+
+.source-details {
+    opacity: 0.72;
+}
+
+.flows-table {
+    min-width: 980px;
+    table-layout: fixed;
+}
+
+.flows-table__col--flow { width: 20%; }
+.flows-table__col--source,
+.flows-table__col--connector,
+.flows-table__col--destination { width: 13%; }
+.flows-table__col--status { width: 11%; }
+.flows-table__col--diagnostic { width: 17%; }
+.flows-table__col--action { width: 13%; }
+
+.flows-table th,
+.flows-table td {
+    min-width: 0;
+}
+
+.flows-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.flows-table td:first-child,
+.flows-table td:nth-child(6) {
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.flows-table .technical-cell code {
+    display: block;
+    overflow: hidden;
+    color: var(--text);
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.flows-table .device-name {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    padding: 0;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.flow-diagnostic {
+    display: grid;
+    gap: 0.12rem;
+}
+
+.flow-diagnostic strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.flow-diagnostic small {
+    color: var(--muted);
+    font-size: 0.7rem;
+}
+
+@media (max-width: 1100px) {
+    .flows-table {
+        min-width: 980px;
+    }
+
+    .flows-table__col--flow { width: 19%; }
+    .flows-table__col--source,
+    .flows-table__col--connector,
+    .flows-table__col--destination { width: 14%; }
+    .flows-table__col--status { width: 11%; }
+    .flows-table__col--diagnostic { width: 15%; }
+    .flows-table__col--action { width: 13%; }
+}
+
+@media (max-width: 700px) {
+    .header-sources {
+        margin-top: 0.45rem;
+    }
+
+    .source-details {
+        font-size: 0.74rem;
+    }
+
+    .flows-table {
+        min-width: 940px;
+    }
+}
