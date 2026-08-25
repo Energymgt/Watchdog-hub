@@ -117,8 +117,8 @@
         }
 
         function setView(view) {
-            state.view = view === 'admin' ? 'admin' : 'fleet';
-            if (state.view === 'admin') state.selectedDevice = null;
+            state.view = view === 'admin' || view === 'flows' ? view : 'fleet';
+            if (state.view !== 'fleet') state.selectedDevice = null;
         }
 
         function selectDevice(device) {

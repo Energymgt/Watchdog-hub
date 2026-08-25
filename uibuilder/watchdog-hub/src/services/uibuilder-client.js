@@ -50,6 +50,15 @@
                 if (msg && msg.topic === 'fleet_snapshot') {
                     handlers.onSnapshot(msg.payload);
                 }
+                if (msg && msg.topic === 'flows_snapshot' && typeof handlers.onFlowsSnapshot === 'function') {
+                    handlers.onFlowsSnapshot(msg.payload);
+                }
+                if (msg && msg.topic === 'flows_incident' && typeof handlers.onFlowsIncident === 'function') {
+                    handlers.onFlowsIncident(msg.payload);
+                }
+                if (msg && msg.topic === 'flows_error' && typeof handlers.onFlowsError === 'function') {
+                    handlers.onFlowsError(msg.payload);
+                }
             });
             client.onChange('ioConnected', function (connected) {
                 handlers.onConnection(Boolean(connected));

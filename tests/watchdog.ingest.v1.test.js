@@ -246,6 +246,19 @@ describe('HTTP ingest auth (WATCHDOG_INGEST_TOKEN)', () => {
         assert.equal(JSON.stringify(res.json).includes(TOKEN), false);
     });
 
+    it('protège aussi les endpoints UI Flux', async () => {
+        const unauthorized = await requestJson(port, 'GET', '/v1/flows');
+        assert.equal(unauthorized.status, 401);
+        assert.equal(unauthorized.json.error, 'unauthorized');
+
+        const authorized = await requestJson(port, 'GET', '/v1/flows', undefined, {
+            'X-Watchdog-Token': TOKEN
+        });
+        assert.equal(authorized.status, 200);
+        assert.equal(authorized.json.ok, true);
+        assert.ok(Array.isArray(authorized.json.flows));
+    });
+
     it('POST /v1/events avec un mauvais token → 401', async () => {
         const res = await requestJson(port, 'POST', '/v1/events', fixture, {
             'X-Watchdog-Token': 'wrong-token'

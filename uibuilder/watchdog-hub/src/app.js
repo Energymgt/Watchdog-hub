@@ -4,7 +4,9 @@
     var Vue = global.Vue;
     var fleet = global.WatchdogHub;
     var store = fleet.createFleetStore(Vue);
+    var flowsStore = fleet.createFlowsStore(Vue);
     var client;
+    var flowsClient;
 
     var Root = {
         name: 'WatchdogHubApp',
@@ -16,6 +18,7 @@
             var pageSize = Vue.ref(50);
             var enrollOpen = Vue.ref(false);
             var enrollOpener = Vue.ref(null);
+            var incidentOpener = Vue.ref(null);
             var timerId;
 
             var stale = Vue.computed(function () {
@@ -76,19 +79,23 @@
             });
 
             function viewFromHash() {
-                return global.location.hash === '#admin' ? 'admin' : 'fleet';
+                if (global.location.hash === '#admin') return 'admin';
+                if (global.location.hash === '#flows') return 'flows';
+                return 'fleet';
             }
 
             function setView(view) {
                 store.setView(view);
-                var nextHash = view === 'admin' ? '#admin' : '';
+                var nextHash = view === 'admin' ? '#admin' : (view === 'flows' ? '#flows' : '');
                 if (global.location.hash !== nextHash) {
                     global.location.hash = nextHash;
                 }
             }
 
             function onHashChange() {
-                store.setView(viewFromHash());
+                var view = viewFromHash();
+                store.setView(view);
+                if (view === 'flows') loadFlows(false);
             }
 
             function announceSnapshot() {
@@ -104,6 +111,44 @@
             function retry() {
                 liveMessage.value = 'Nouvelle tentative de connexion.';
                 client.requestSnapshot();
+            }
+
+            function loadFlows(refreshing) {
+                flowsStore.beginLoad();
+                if (refreshing) {
+                    liveMessage.value = 'Actualisation des flux demandée.';
+                    flowsClient.requestRefresh();
+                } else {
+                    flowsClient.requestSnapshot();
+                }
+            }
+
+            function openIncident(incident, opener) {
+                incidentOpener.value = opener || null;
+                flowsStore.beginMutation();
+                flowsClient.requestIncident(incident.incident_id);
+            }
+
+            function closeIncident() {
+                flowsStore.selectIncident(null);
+            }
+
+            function addIncidentNote(data) {
+                flowsStore.beginMutation();
+                liveMessage.value = 'Enregistrement de la note.';
+                flowsClient.addAction(data);
+            }
+
+            function transitionIncident(data) {
+                flowsStore.beginMutation();
+                liveMessage.value = 'Mise à jour de l’incident.';
+                flowsClient.transitionIncident(data);
+            }
+
+            function resolveIncident(data) {
+                flowsStore.beginMutation();
+                liveMessage.value = 'Enregistrement de la résolution.';
+                flowsClient.resolveIncident(data);
             }
 
             function resetFilters() {
@@ -154,7 +199,9 @@
             }
 
             var modalOpen = Vue.computed(function () {
-                return Boolean(store.state.selectedDevice) || enrollOpen.value;
+                return Boolean(store.state.selectedDevice)
+                    || Boolean(flowsStore.state.selectedIncident)
+                    || enrollOpen.value;
             });
 
             client = fleet.createUibuilderClient({
@@ -168,16 +215,36 @@
                         liveMessage.value = connected ? 'Connexion rétablie.' : 'Connexion interrompue. Reconnexion en cours.';
                     }
                 },
-                onError: store.setClientError
+                onError: store.setClientError,
+                onFlowsSnapshot: function (payload) {
+                    var selected = flowsStore.state.selectedIncident
+                        && flowsStore.state.selectedIncident.incident;
+                    if (flowsStore.acceptSnapshot(payload)) {
+                        liveMessage.value = flowsStore.state.flows.length + ' flux chargés.';
+                        if (selected) flowsClient.requestIncident(selected.incident_id);
+                    }
+                },
+                onFlowsIncident: function (payload) {
+                    if (flowsStore.acceptIncident(payload)) {
+                        liveMessage.value = 'Détail de l’incident chargé.';
+                    }
+                },
+                onFlowsError: flowsStore.setError
+            });
+            flowsClient = fleet.createFlowsUibuilderClient({
+                onError: flowsStore.setError
             });
 
             Vue.onMounted(function () {
-                store.setView(viewFromHash());
+                var initialView = viewFromHash();
+                store.setView(initialView);
                 global.addEventListener('hashchange', onHashChange);
                 timerId = global.setInterval(function () {
                     now.value = Date.now();
                 }, 15000);
+                flowsClient.start();
                 client.start();
+                if (initialView === 'flows') loadFlows(false);
             });
 
             Vue.onBeforeUnmount(function () {
@@ -187,12 +254,14 @@
 
             return {
                 state: store.state,
+                flowsState: flowsStore.state,
                 now: now,
                 stale: stale,
                 fleetName: fleetName,
                 modalOpen: modalOpen,
                 enrollOpen: enrollOpen,
                 enrollOpener: enrollOpener,
+                incidentOpener: incidentOpener,
                 filteredDevices: filteredDevices,
                 pagedDevices: pagedDevices,
                 page: page,
@@ -202,6 +271,12 @@
                 setView: setView,
                 refresh: refresh,
                 retry: retry,
+                loadFlows: loadFlows,
+                openIncident: openIncident,
+                closeIncident: closeIncident,
+                addIncidentNote: addIncidentNote,
+                transitionIncident: transitionIncident,
+                resolveIncident: resolveIncident,
                 resetFilters: resetFilters,
                 openDetail: openDetail,
                 closeDetail: closeDetail,
@@ -217,15 +292,18 @@
             '<div class="app-shell">' +
                 '<fleet-header :fleet-name="fleetName" :generated-at="state.snapshot && state.snapshot.generatedAt" :last-evaluation-at="state.snapshot && state.snapshot.lastEvaluationAt" :next-poll-at="state.snapshot && state.snapshot.nextPollAt" :now="now" :stale="stale" :connected="state.connected === true" :source-status="state.sourceStatus" :inert="modalOpen ? true : undefined"></fleet-header>' +
                 '<app-nav :view="state.view" :inert="modalOpen ? true : undefined" @update:view="setView"></app-nav>' +
-                '<main id="main-content" class="dashboard" tabindex="-1" :aria-busy="state.refreshing || state.adminSaving ? \'true\' : \'false\'" :inert="modalOpen ? true : undefined">' +
+                '<main id="main-content" class="dashboard" tabindex="-1" :aria-busy="state.view === \'flows\' ? (flowsState.refreshing || flowsState.mutating ? \'true\' : \'false\') : (state.refreshing || state.adminSaving ? \'true\' : \'false\')" :inert="modalOpen ? true : undefined">' +
                     '<p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</p>' +
                     '<ui-banner v-if="state.connected === false" kind="warning">Connexion au serveur interrompue. Reconnexion automatique en cours…</ui-banner>' +
-                    '<ui-banner v-if="state.lastError && state.snapshot" kind="error">{{ state.lastError }}</ui-banner>' +
-                    '<ui-banner v-if="state.notice" kind="info">{{ state.notice }}</ui-banner>' +
+                    '<ui-banner v-if="state.view !== \'flows\' && state.lastError && state.snapshot" kind="error">{{ state.lastError }}</ui-banner>' +
+                    '<ui-banner v-if="state.view !== \'flows\' && state.notice" kind="info">{{ state.notice }}</ui-banner>' +
                     '<template v-if="state.view === \'admin\'">' +
                         '<admin-page v-if="state.admin" :admin="state.admin" :source-status="state.sourceStatus" :saving="state.adminSaving" :now="now" @save="saveAdmin" @test-teams="testTeams" @unenroll="unenrollDevice" @open-enroll="openEnroll"></admin-page>' +
                         '<state-panel v-else-if="state.loading" kind="loading" title="Chargement de l’administration" message="Récupération de la configuration…" :busy="true"></state-panel>' +
                         '<state-panel v-else kind="error" title="Configuration indisponible" :message="state.lastError || \'Aucun snapshot n’a été reçu.\'" action-label="Réessayer" @retry="retry"></state-panel>' +
+                    '</template>' +
+                    '<template v-else-if="state.view === \'flows\'">' +
+                        '<flows-page :state="flowsState" :now="now" @refresh="loadFlows(true)" @retry="loadFlows(false)" @select-incident="openIncident"></flows-page>' +
                     '</template>' +
                     '<template v-else-if="state.snapshot">' +
                         '<fleet-kpis :summary="state.summary" :loading="state.refreshing"></fleet-kpis>' +
@@ -244,6 +322,7 @@
                 '</main>' +
                 '<device-detail v-if="state.selectedDevice" :device="state.selectedDevice" :opener="detailOpener" @close="closeDetail"></device-detail>' +
                 '<enroll-wizard v-if="enrollOpen" :opener="enrollOpener" :mqtt="(state.admin && state.admin.mqtt) || {}" @close="closeEnroll" @enroll="enrollDevice"></enroll-wizard>' +
+                '<incident-detail v-if="flowsState.selectedIncident" :detail="flowsState.selectedIncident" :opener="incidentOpener" :busy="flowsState.mutating" @close="closeIncident" @note="addIncidentNote" @transition="transitionIncident" @resolve="resolveIncident"></incident-detail>' +
             '</div>'
     };
 

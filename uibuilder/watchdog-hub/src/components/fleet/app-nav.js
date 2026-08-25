@@ -11,6 +11,7 @@
         template:
             '<nav class="app-nav" aria-label="Sections de l’application">' +
                 '<button class="app-nav__item" type="button" :aria-current="view === \'fleet\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'fleet\')">Flotte</button>' +
+                '<button class="app-nav__item" type="button" :aria-current="view === \'flows\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'flows\')">Flux et incidents</button>' +
                 '<button class="app-nav__item" type="button" :aria-current="view === \'admin\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'admin\')">Administration</button>' +
             '</nav>'
     };

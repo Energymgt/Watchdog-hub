@@ -258,6 +258,7 @@ describe('HTTP incidents Lot 5', { concurrency: false }, () => {
         const id = listed.json.incidents[0].incident_id;
         const one = await requestJson(port, 'GET', `/v1/incidents/${id}`);
         assert.equal(one.status, 200);
+        assert.deepEqual(one.json.allowed_transitions, ['OUVERT', 'CLOS']);
         assert.ok(one.json.history.length >= 1);
         assert.ok(one.json.links.some((l) => l.target_kind === 'anomaly'));
         const health = await requestJson(port, 'GET', '/healthz');

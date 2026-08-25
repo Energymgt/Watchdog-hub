@@ -161,3 +161,7 @@ L’état de flux (`unknown` / `ok` / `degraded` / `down`) est une **projection*
 ## Hors Lot 7
 
 UI Flux, modification Fleet BACnet, seuils de fraîcheur météo, SLA fichier OASSIS.
+
+## Extension post-Lot 7
+
+La vue opérateur `/watchdog-hub#flows` consomme les contrats Lots 4 à 7 sans modifier leurs règles métier. Elle permet la consultation, les notes, les transitions autorisées, la résolution commentée et la clôture. Node-RED conserve le token ingest et sert de pont UIbuilder.

@@ -74,6 +74,27 @@ Le dashboard `/watchdog-hub#admin` envoie des actions UIbuilder. Node-RED persis
 
 L’abonnement MQTT (broker réel) reste celui du nœud Node-RED. Les champs broker/topic de l’admin servent à l’onboarding (instructions copiables).
 
+## Vue Flux et incidents
+
+Le dashboard `/watchdog-hub#flows` utilise UIbuilder comme pont sécurisé vers l’API ingest locale. `WATCHDOG_INGEST_TOKEN` est lu uniquement par Node-RED et n’est jamais transmis au navigateur.
+
+| Action UIbuilder | Appel ingest |
+|------------------|--------------|
+| `flows_snapshot_get` | `GET /v1/flows` puis `GET /v1/incidents?limit=100` |
+| `flows_refresh_request` | Recharge le snapshot Flux |
+| `flows_incident_get` | `GET /v1/incidents/:id` |
+| `flows_incident_action` | `POST /v1/incidents/:id/actions` |
+| `flows_incident_patch` | `PATCH /v1/incidents/:id` |
+| `flows_incident_resolve` | `POST /v1/incidents/:id/resolutions` |
+
+| Topic UIbuilder | Contenu |
+|-----------------|---------|
+| `flows_snapshot` | Flux, règles de santé, 100 incidents au maximum et notice opérateur |
+| `flows_incident` | Incident, transitions autorisées, liens, historique, actions et résolutions |
+| `flows_error` | Erreur normalisée sans secret, avec code HTTP et opération |
+
+Après une action, une transition ou une résolution réussie, Node-RED recharge le snapshot. Si la modale reste ouverte, le client recharge ensuite le détail de l’incident.
+
 ## Anti-flap Teams
 
 Les alertes Teams ne partent qu'après **N polls Balena consécutifs** (défaut **2**) confirmant le même défaut ou la même recovery.

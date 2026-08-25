@@ -22,16 +22,9 @@
         function start() {
             if (started) return;
             started = true;
-            if (!client || typeof client.onChange !== 'function') {
+            if (!client || typeof client.send !== 'function') {
                 handlers.onError(new Error('Le client UIbuilder Flux n’a pas pu être chargé.'));
-                return;
             }
-            client.onChange('msg', function (msg) {
-                if (!msg) return;
-                if (msg.topic === 'flows_snapshot') handlers.onSnapshot(msg.payload);
-                if (msg.topic === 'flows_incident') handlers.onIncident(msg.payload);
-                if (msg.topic === 'flows_error') handlers.onError(msg.payload);
-            });
         }
 
         return {
@@ -47,6 +40,6 @@
         };
     }
 
-    global.WatchdogFleet = global.WatchdogFleet || {};
-    global.WatchdogFleet.createFlowsUibuilderClient = createFlowsUibuilderClient;
+    global.WatchdogHub = global.WatchdogHub || {};
+    global.WatchdogHub.createFlowsUibuilderClient = createFlowsUibuilderClient;
 }(window));

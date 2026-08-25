@@ -13,24 +13,26 @@ watchdog-hub/
 ├── flows/
 │   └── 04_Watchdog_Hub.json    # Flow Node-RED fleet
 ├── uibuilder/watchdog-hub/src/ # UI Vue 3 (lecture seule)
-├── Dockerfile                    # Image Docker Hub
+├── Dockerfile                    # Image GHCR
 ├── docker-compose.yml            # Stack Portainer/Swarm
 ├── settings.js                   # Config Node-RED
 ├── start.sh                      # Entrypoint (init flows + UI)
-├── publish.ps1                   # Build + push Docker Hub
+├── publish.ps1                   # Build + push GHCR
 ├── tests/watchdog.*.v1.test.js   # Contrats ingest (npm test)
 ├── INTEGRATION.md                # Contrat MQTT gateway ↔ fleet
 └── .env.example                  # Variables Portainer
 ```
 
-## Construire et publier (Docker Hub → Portainer)
+## Construire et publier (GHCR → Portainer)
 
-Flux cible : build local → push Docker Hub → le serveur tire l'image via Portainer
+Flux cible : dépôt Git propre → tests et build local → push du commit vers GitHub
+→ push de l'image GHCR issue du même commit → déploiement via Portainer
 (pas de build sur le siège).
 
-### Phase DEV (tag mutable)
+### Phase développement (tag mutable)
 
-Portainer reste sur `WATCHDOG_HUB_IMAGE=kxchrisemgt/watchdog-hub:DEV`.  
+Portainer reste sur `WATCHDOG_HUB_IMAGE=ghcr.io/energymgt/watchdog-hub:dev`.
+
 Pas besoin de changer la version à chaque déploiement.
 
 ```powershell
@@ -41,7 +43,13 @@ Pas besoin de changer la version à chaque déploiement.
 .\watchdog-hub\publish.ps1
 ```
 
-Puis sur Portainer : **Update the stack** + **Pull and redeploy** (re-pull du tag `DEV`).
+Le script refuse les modifications non commitées et vérifie que `origin` pointe vers
+`Energymgt/Watchdog-hub`. Il exécute les tests et le build avant toute publication,
+puis pousse la branche courante et l'image associée au même commit.
+`-SkipTests` est réservé aux validations déjà effectuées explicitement.
+`-SkipPush` construit uniquement l'image locale sans pousser le code ni l'image.
+
+Puis sur Portainer : **Update the stack** + **Pull and redeploy** (re-pull du tag `dev`).
 
 ### Release (tag immuable)
 
@@ -51,14 +59,14 @@ Puis sur Portainer : **Update the stack** + **Pull and redeploy** (re-pull du ta
 
 Changer alors `WATCHDOG_HUB_IMAGE` dans Portainer. Ne pas réutiliser un tag de release déjà poussé.
 
-Équivalent manuel DEV :
+Équivalent manuel en développement :
 
 ```bash
 cd watchdog-hub
 docker build --platform linux/amd64 \
-  --build-arg WATCHDOG_VERSION=DEV \
-  -t kxchrisemgt/watchdog-hub:DEV .
-docker push kxchrisemgt/watchdog-hub:DEV
+  --build-arg WATCHDOG_VERSION=dev \
+  -t ghcr.io/energymgt/watchdog-hub:dev .
+docker push ghcr.io/energymgt/watchdog-hub:dev
 ```
 
 L'image doit être `linux/amd64` pour le nœud Swarm siège.
@@ -67,16 +75,44 @@ Runtime : Node-RED **5.0.4**, publié sur le port hôte **1884**. Ingest : port 
 ### Serveur distant (Portainer)
 
 1. Stack basée sur `watchdog-hub/docker-compose.yml`.
-2. Phase DEV : `WATCHDOG_HUB_IMAGE=kxchrisemgt/watchdog-hub:DEV` (une seule fois).
-3. Si le dépôt Docker Hub est privé : Registry credentials Portainer pour `kxchrisemgt`.
+2. Phase développement : `WATCHDOG_HUB_IMAGE=ghcr.io/energymgt/watchdog-hub:dev` (une seule fois).
+3. Si le package GHCR est privé : configurer dans Portainer les identifiants d'un compte autorisé à lire les packages `energymgt`.
 4. **Update the stack** avec pull de l'image (re-pull / Pull and redeploy).
 5. Vérifier `http://<serveur>:1884/watchdog-hub` et `http://<serveur>:8091/healthz`.
+
+### Migration depuis Watchdog Fleet
+
+Le renommage change le service, l'image, la route UIbuilder et le volume Docker.
+Avant de mettre à jour la stack, migrer les données persistantes :
+
+```bash
+# Remplacer <stack> par le nom réel de la stack Portainer.
+docker volume inspect <stack>_watchdog_fleet_data
+docker run --rm \
+  -v <stack>_watchdog_fleet_data:/from:ro \
+  -v ${PWD}:/backup \
+  alpine tar czf /backup/watchdog_fleet_data-before-hub.tgz -C /from .
+
+docker volume create <stack>_watchdog_hub_data
+docker run --rm \
+  -v <stack>_watchdog_fleet_data:/from:ro \
+  -v <stack>_watchdog_hub_data:/to \
+  alpine sh -c 'cd /from && cp -a . /to/'
+```
+
+Ensuite :
+
+1. Remplacer `WATCHDOG_FLEET_IMAGE` par `WATCHDOG_HUB_IMAGE`.
+2. Utiliser l'image `ghcr.io/energymgt/watchdog-hub:<tag>`.
+3. Mettre à jour la stack avec le nouveau `docker-compose.yml`.
+4. Vérifier `/watchdog-hub`, l'ingest, Balena, MQTT et Teams.
+5. Conserver l'ancien volume jusqu'à validation complète du nouveau déploiement.
 
 ## Variables Portainer
 
 Voir `.env.example`. Principales :
 
-- `WATCHDOG_HUB_IMAGE` : `kxchrisemgt/watchdog-hub:DEV` en phase DEV ; tag immuable `x.y.z` en release.
+- `WATCHDOG_HUB_IMAGE` : `ghcr.io/energymgt/watchdog-hub:dev` en développement ; tag immuable `x.y.z` en release.
 - `USERNAME`, `PASSWORD` : authentification de l'éditeur Node-RED.
 - `ENCRYPTION_KEY` : secret fixe de chiffrement des credentials.
 - `TEAMS_WEBHOOK_URL` : URL du Workflow Teams.
@@ -125,7 +161,9 @@ Lot 5 — incidents corrélés (`GET /v1/incidents`, `PATCH /v1/incidents/:id`),
 Lot 6 — actions enregistrées (`POST /v1/incidents/:id/actions`). Pas d’orchestration, pas d’UI Flux.  
 Lot 7 — résolutions (`POST /v1/incidents/:id/resolutions`) + état de flux calculé (`GET /v1/flows`, `GET /v1/flows/:id`). Pas d’UI Flux.
 
-Ingest siège (tag `DEV`, port hôte **8091**) après Pull and redeploy Portainer :
+Post-Lot 7 — vue `/watchdog-hub#flows` : consultation des flux et incidents, notes opérateur, transitions, résolutions et clôture via un pont UIbuilder sécurisé. Le token ingest reste côté Node-RED.
+
+Ingest siège (tag `dev`, port hôte **8091**) après Pull and redeploy Portainer :
 
 ```text
 GET  http://<serveur>:8091/healthz
@@ -144,7 +182,8 @@ La vue Fleet BACnet (`:1884/watchdog-hub`) n’est pas modifiée.
 
 ## Mise à jour
 
-**DEV :** `.\publish.ps1` puis Pull and redeploy. Ne pas changer `WATCHDOG_HUB_IMAGE`.  
+**Développement :** `.\publish.ps1` puis Pull and redeploy. Ne pas changer `WATCHDOG_HUB_IMAGE`.
+
 **Release :** pousser un tag immuable `x.y.z`, puis modifier `WATCHDOG_HUB_IMAGE` une fois.
 
 Swarm surveille le healthcheck et revient à l'image précédente si la tâche ne devient pas saine.  
