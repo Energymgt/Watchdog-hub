@@ -10,7 +10,7 @@ version: "3.8"
 
 services:
   watchdog-hub:
-    image: ${WATCHDOG_HUB_IMAGE}
+    image: ${WATCHDOG_HUB_IMAGE:-ghcr.io/energymgt/watchdog-hub:dev}
     environment:
       TZ: Europe/Paris
       USERNAME: ${USERNAME:-admin}
@@ -28,7 +28,7 @@ services:
       WATCHDOG_INGEST_TOKEN: ${WATCHDOG_INGEST_TOKEN:-}
     volumes:
       - watchdog_hub_data:/data
-    # 8091 reste publié pour A2 (producteurs CSV/Météo sur un autre hôte/stack).
+    # 8091 reste publié pour A2 (producteurs CSV/Météo sur le même serveur ou un autre hôte).
     # Production : poser WATCHDOG_INGEST_TOKEN et/ou restreindre l'interface hôte
     # (ex. 10.x.x.x:8091:8091). Ne pas publier 8091 sur un réseau public sans token.
     ports:

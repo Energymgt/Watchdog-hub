@@ -460,10 +460,30 @@
         "y": 560,
         "wires": [
             [
-                "f10a000000000002"
+                "f10a000000000004"
             ],
             [
                 "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "f10a000000000004",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Restore Watchdog Auth",
+        "func": "const token = String(env.get('WATCHDOG_INGEST_TOKEN') || '').trim();\nmsg.headers = { Accept: 'application/json' };\nif (token) msg.headers['X-Watchdog-Token'] = token;\nif (msg.method !== 'GET') msg.headers['Content-Type'] = 'application/json';\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 570,
+        "y": 620,
+        "wires": [
+            [
+                "f10a000000000002"
             ]
         ]
     },

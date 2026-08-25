@@ -28,15 +28,22 @@ describe('contrat UI Flux et incidents', () => {
         const actions = flow.find((node) => node.name === 'Flows UI Actions');
         const request = flow.find((node) => node.name === 'Watchdog ingest API');
         const response = flow.find((node) => node.name === 'Build Flows UI Response');
+        const restoreAuth = flow.find((node) => node.name === 'Restore Watchdog Auth');
 
         assert.ok(ui);
         assert.ok(actions);
         assert.ok(request);
         assert.ok(response);
+        assert.ok(restoreAuth);
         assert.ok(ui.wires[0].includes(actions.id));
+        assert.ok(response.wires[0].includes(restoreAuth.id));
+        assert.ok(restoreAuth.wires[0].includes(request.id));
         assert.doesNotThrow(() => new vm.Script(`(function (msg, node, flow, env) {${actions.func}\n})`));
         assert.doesNotThrow(() => new vm.Script(`(function (msg, node, flow, env) {${response.func}\n})`));
+        assert.doesNotThrow(() => new vm.Script(`(function (msg, node, flow, env) {${restoreAuth.func}\n})`));
         assert.match(actions.func, /WATCHDOG_INGEST_TOKEN/);
+        assert.match(restoreAuth.func, /WATCHDOG_INGEST_TOKEN/);
+        assert.match(restoreAuth.func, /X-Watchdog-Token/);
         assert.match(actions.func, /flows_incident_resolve/);
         assert.doesNotMatch(actions.func, /return \[null, msg\]/);
         assert.match(response.func, /flows_snapshot/);
