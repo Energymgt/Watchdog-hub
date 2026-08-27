@@ -9,6 +9,8 @@
             view: { type: String, default: 'fleet' },
             incidents: { type: Number, default: 0 },
             flows: { type: Number, default: 0 },
+            anomalies: { type: Number, default: 0 },
+            events: { type: Number, default: 0 },
             fleetAlerts: { type: Number, default: 0 }
         },
         template:
@@ -21,8 +23,8 @@
                     '<span class="app-nav__label">Opérations</span>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'incidents\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'incidents\')">Incidents <span v-if="incidents" class="app-nav__count">{{ incidents }}</span></button>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'flows\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'flows\')">Flux <span v-if="flows" class="app-nav__count">{{ flows }}</span></button>' +
-                    '<button class="app-nav__item app-nav__item--unavailable" type="button" disabled title="Non exposé par le pont UIbuilder">Anomalies</button>' +
-                    '<button class="app-nav__item app-nav__item--unavailable" type="button" disabled title="Non exposé par le pont UIbuilder">Événements</button>' +
+                    '<button class="app-nav__item" type="button" :aria-current="view === \'anomalies\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'anomalies\')">Anomalies <span v-if="anomalies" class="app-nav__count">{{ anomalies }}</span></button>' +
+                    '<button class="app-nav__item" type="button" :aria-current="view === \'events\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'events\')">Événements <span v-if="events" class="app-nav__count">{{ events }}</span></button>' +
                 '</div>' +
                 '<div class="app-nav__group">' +
                     '<span class="app-nav__label">Infrastructure</span>' +

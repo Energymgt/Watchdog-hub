@@ -34,6 +34,7 @@
             },
             systemState: function () {
                 if (!this.connected) return { label: 'DISCONNECTED', state: 'dead' };
+                if (!this.generatedAt) return { label: 'UNKNOWN', state: 'unknown' };
                 if ((this.flowSummary.down || 0) > 0) return { label: 'CRITICAL', state: 'dead' };
                 if ((this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || (this.fleetSummary.alerts || 0) > 0) {
                     return { label: 'DEGRADED', state: 'cloud_down' };
@@ -58,7 +59,7 @@
             '<header class="page-header">' +
                 '<div class="header-content">' +
                     '<div class="header-identity">' +
-                        '<h1>{{ fleetName }}</h1>' +
+                        '<div><p class="eyebrow">Fleet Command Center</p><h1>{{ fleetName }}</h1></div>' +
                         '<status-badge :state="systemState.state" :label="systemState.label"></status-badge>' +
                     '</div>' +
                     '<div class="header-meta header-meta--primary">' +
@@ -66,7 +67,7 @@
                         '<span class="system-summary">{{ affectedFlows }} flux</span>' +
                         '<span class="system-summary">{{ fleetSummary.alerts || 0 }} alertes flotte</span>' +
                         '<span class="system-summary" :title="formatDateTime(generatedAt)">Snapshot {{ formatRelative(generatedAt) }}</span>' +
-                        '<status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'WebSocket connected\' : \'WebSocket disconnected\'"></status-badge>' +
+                        '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'LIVE\' : \'OFFLINE\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
                         '<button class="header-command" type="button" @click="$emit(\'open-command\')">Commandes <kbd>Ctrl K</kbd></button>' +
                     '</div>' +
                 '</div>' +

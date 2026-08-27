@@ -92,13 +92,14 @@ describe('contrat du shell UI Watchdog Hub', () => {
         assert.match(nav, /Opérations/);
         assert.match(nav, /Infrastructure/);
         assert.match(nav, /Administration/);
-        assert.match(nav, /disabled title="Non exposé par le pont UIbuilder">Anomalies/);
-        assert.match(nav, /disabled title="Non exposé par le pont UIbuilder">Événements/);
-        assert.doesNotMatch(nav, /update:view', 'anomal/);
+        assert.match(nav, /anomalies.*update:view|update:view.*anomalies/);
+        assert.match(nav, /update:view.*events|events.*update:view/);
         assert.doesNotMatch(nav, /open-command/);
 
         assert.match(header, /header-secondary/);
         assert.match(header, /DEGRADED/);
+        assert.match(header, /UNKNOWN/);
+        assert.match(header, /LIVE/);
         assert.match(header, /WebSocket connected/);
         assert.match(header, /open-command/);
         assert.match(app, /@open-command="openCommandPalette"/);
@@ -113,6 +114,11 @@ describe('contrat du shell UI Watchdog Hub', () => {
         assert.match(overview, /Operational Overview/);
         assert.match(overview, /À traiter maintenant/);
         assert.match(overview, /Santé des flux/);
+        assert.match(overview, /Activité récente/);
+        assert.match(overview, /recentTransitions/);
+        assert.match(overview, /openView/);
+        assert.match(overview, /activity-timeline/);
+        assert.match(overview, /activity/);
         assert.match(overview, /HEALTHY/);
         assert.match(overview, /DEGRADED/);
         assert.match(overview, /UNKNOWN/);
@@ -121,5 +127,33 @@ describe('contrat du shell UI Watchdog Hub', () => {
         assert.doesNotMatch(overview, /CRITICAL ·/);
         assert.doesNotMatch(overview, /Production/);
         assert.doesNotMatch(overview, /[\u2013\u2014]/);
+        assert.doesNotMatch(overview, /latence|exécution|severity|impact/i);
+    });
+
+    it('câble les KPI et la sélection de flux vers les espaces existants', () => {
+        const overview = fs.readFileSync(path.join(UI_ROOT, 'components/overview-page.js'), 'utf8');
+        const app = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
+
+        assert.match(overview, /openView.*incidents/);
+        assert.match(overview, /openView.*flows/);
+        assert.match(overview, /openView.*fleet/);
+        assert.match(overview, /openView.*flow/);
+        assert.match(app, /selectFlow\(item\)/);
+        assert.match(app, /@open-view="openView"/);
+    });
+
+    it('conserve le workflow réel et les liens liés sans inventer d’état', () => {
+        const list = fs.readFileSync(path.join(UI_ROOT, 'components/flows/incident-list.js'), 'utf8');
+        const detail = fs.readFileSync(path.join(UI_ROOT, 'components/flows/incident-detail.js'), 'utf8');
+        const app = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
+
+        for (const state of ['DETECTE', 'OUVERT', 'EN_ANALYSE', 'EN_CORRECTION', 'EN_VALIDATION', 'RESOLU', 'CLOS']) {
+            assert.match(list, new RegExp(state));
+        }
+        assert.match(detail, /allowedTransitions/);
+        assert.match(detail, /open-related/);
+        assert.match(detail, /target_kind === 'flow'/);
+        assert.match(app, /target_kind !== 'flow'/);
+        assert.doesNotMatch(detail, /ACKNOWLEDGED|INVESTIGATING/);
     });
 });

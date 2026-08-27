@@ -28,6 +28,8 @@
             admin: { type: Object, default: null },
             sourceStatus: { type: Object, default: function () { return {}; } },
             saving: { type: Boolean, default: false },
+            notice: { type: String, default: '' },
+            error: { type: String, default: '' },
             now: { type: Number, default: Date.now }
         },
         data: function () {
@@ -66,6 +68,16 @@
             },
             mqttTone: function () {
                 return this.sourceStatus.mqtt && this.sourceStatus.mqtt.ok ? 'ok' : 'heartbeat_missing';
+            },
+            validationErrors: function () {
+                var errors = {};
+                if (!this.form.fleetName.trim()) errors.fleetName = 'Le nom de la flotte est obligatoire.';
+                if (Number(this.form.mqttPort) < 1 || Number(this.form.mqttPort) > 65535) errors.mqttPort = 'Le port doit être compris entre 1 et 65535.';
+                if (Number(this.form.offlineGraceMinutes) < 1 || Number(this.form.offlineGraceMinutes) > 60) errors.offlineGraceMinutes = 'Valeur comprise entre 1 et 60 minutes.';
+                if (Number(this.form.firstSeenGraceMinutes) < 1 || Number(this.form.firstSeenGraceMinutes) > 60) errors.firstSeenGraceMinutes = 'Valeur comprise entre 1 et 60 minutes.';
+                if (Number(this.form.confirmsRequired) < 1 || Number(this.form.confirmsRequired) > 5) errors.confirmsRequired = 'Valeur comprise entre 1 et 5.';
+                if (Number(this.form.heartbeatTtlDays) < 1 || Number(this.form.heartbeatTtlDays) > 365) errors.heartbeatTtlDays = 'Valeur comprise entre 1 et 365 jours.';
+                return errors;
             }
         },
         methods: {
@@ -91,6 +103,7 @@
                 this.dirty = false;
             },
             save: function () {
+                if (this.saving || Object.keys(this.validationErrors).length) return;
                 this.dirty = false;
                 this.$emit('save', {
                     fleetName: this.form.fleetName,
@@ -108,6 +121,11 @@
                 });
                 this.form.balenaToken = '';
                 this.form.teamsWebhookUrl = '';
+            },
+            confirmUnenroll: function (item) {
+                var label = item && item.name ? item.name : (item && item.uuid ? item.uuid : 'cet appareil');
+                if (global.confirm && !global.confirm('Retirer ' + label + ' de la flotte pré-enregistrée ?')) return;
+                this.$emit('unenroll', item.uuid);
             }
         },
         template:
@@ -120,7 +138,9 @@
                     '</div>' +
                     '<ui-button @click="$emit(\'open-enroll\', $event)">Connecter un appareil</ui-button>' +
                 '</div>' +
-                '<ui-banner kind="warning">Cette vue écrit la configuration runtime dans Node-RED. L’accès doit rester limité au réseau siège. Les variables Portainer restent le repli si un champ UI est vide.</ui-banner>' +
+                '<ui-banner kind="warning">Cette vue configure les intégrations et paramètres Fleet. Les variables Portainer restent le repli si un champ UI est vide.</ui-banner>' +
+                '<ui-banner v-if="notice" kind="success">{{ notice }}</ui-banner>' +
+                '<ui-banner v-if="error" kind="error">Configuration non enregistrée : {{ error }}</ui-banner>' +
                 '<div class="integration-grid">' +
                     '<article class="integration-card">' +
                         '<div class="integration-card__head">' +
@@ -128,8 +148,8 @@
                             '<status-badge :state="balenaTone" :label="balena.configured ? \'Connecté\' : \'À configurer\'"></status-badge>' +
                         '</div>' +
                         '<p>Inventaire devices et statut online. Token <code>device:read</code>.</p>' +
-                        '<ui-field label="Fleet / App ID" extra-class="admin-field" hint="ID numérique, slug d’application, ou UUID d’un device de la fleet.">' +
-                            '<input :value="form.balenaAppId" spellcheck="false" autocomplete="off" @input="markDirty(); form.balenaAppId = $event.target.value">' +
+                        '<ui-field label="Fleets / App IDs" extra-class="admin-field" hint="Un ID numérique, slug ou UUID par ligne. Les virgules sont aussi acceptées.">' +
+                            '<textarea :value="form.balenaAppId" rows="4" spellcheck="false" autocomplete="off" @input="markDirty(); form.balenaAppId = $event.target.value"></textarea>' +
                         '</ui-field>' +
                         '<ui-field label="Token API" extra-class="admin-field" :hint="balena.tokenSet ? (\'Enregistré \' + (balena.tokenHint || \'\') + \' — source \' + (balena.source || \'ui\') + \'. Laisser vide pour conserver.\') : \'Coller un nouveau token. Laisser vide conserve la valeur actuelle.\'">' +
                             '<input :value="form.balenaToken" type="password" autocomplete="new-password" placeholder="••••" @input="markDirty(); form.balenaToken = $event.target.value">' +
@@ -144,8 +164,8 @@
                         '<ui-field label="Broker affiché" extra-class="admin-field">' +
                             '<input :value="form.mqttHost" spellcheck="false" autocomplete="off" @input="markDirty(); form.mqttHost = $event.target.value">' +
                         '</ui-field>' +
-                        '<ui-field label="Port" extra-class="admin-field">' +
-                            '<input :value="form.mqttPort" type="number" min="1" max="65535" @input="markDirty(); form.mqttPort = $event.target.value">' +
+                        '<ui-field label="Port" extra-class="admin-field" :error="validationErrors.mqttPort">' +
+                            '<input :value="form.mqttPort" type="number" min="1" max="65535" :aria-invalid="Boolean(validationErrors.mqttPort)" @input="markDirty(); form.mqttPort = $event.target.value">' +
                         '</ui-field>' +
                         '<ui-field label="Topic" extra-class="admin-field" hint="Utilisez {uuid} comme variable.">' +
                             '<input :value="form.mqttTopicPattern" spellcheck="false" autocomplete="off" @input="markDirty(); form.mqttTopicPattern = $event.target.value">' +
@@ -160,27 +180,27 @@
                         '<ui-field label="URL webhook" extra-class="admin-field" :hint="teams.configured ? \'Laisser vide pour conserver l’URL actuelle.\' : \'URL HTTPS logic.azure.com\'">' +
                             '<input :value="form.teamsWebhookUrl" type="password" autocomplete="new-password" placeholder="https://…" @input="markDirty(); form.teamsWebhookUrl = $event.target.value">' +
                         '</ui-field>' +
-                        '<ui-button variant="secondary" :disabled="!teams.configured && !form.teamsWebhookUrl" @click="$emit(\'test-teams\')">Envoyer une carte test</ui-button>' +
+                        '<ui-button variant="secondary" :disabled="!teams.configured && !form.teamsWebhookUrl" @click="$emit(\'test-teams\')">Tester l’intégration</ui-button>' +
                     '</article>' +
                 '</div>' +
                 '<article class="integration-card">' +
                     '<div class="integration-card__head"><h3>Identité et seuils</h3></div>' +
                     '<p>Valeurs actuelles du flow (grâce 5 min, 2 polls, TTL 30 j). Les modifier ici ne change pas la machine d’états, seulement les constantes.</p>' +
                     '<div class="admin-settings">' +
-                        '<ui-field label="Nom de la flotte" extra-class="admin-field">' +
-                            '<input :value="form.fleetName" maxlength="80" @input="markDirty(); form.fleetName = $event.target.value">' +
+                        '<ui-field label="Nom de la flotte" extra-class="admin-field" :error="validationErrors.fleetName">' +
+                            '<input :value="form.fleetName" maxlength="80" required :aria-invalid="Boolean(validationErrors.fleetName)" @input="markDirty(); form.fleetName = $event.target.value">' +
                         '</ui-field>' +
-                        '<ui-field label="Grâce heartbeat (min)" extra-class="admin-field">' +
-                            '<input :value="form.offlineGraceMinutes" type="number" min="1" max="60" @input="markDirty(); form.offlineGraceMinutes = $event.target.value">' +
+                        '<ui-field label="Grâce heartbeat (min)" extra-class="admin-field" :error="validationErrors.offlineGraceMinutes">' +
+                            '<input :value="form.offlineGraceMinutes" type="number" min="1" max="60" :aria-invalid="Boolean(validationErrors.offlineGraceMinutes)" @input="markDirty(); form.offlineGraceMinutes = $event.target.value">' +
                         '</ui-field>' +
-                        '<ui-field label="Grâce nouvel appareil (min)" extra-class="admin-field">' +
-                            '<input :value="form.firstSeenGraceMinutes" type="number" min="1" max="60" @input="markDirty(); form.firstSeenGraceMinutes = $event.target.value">' +
+                        '<ui-field label="Grâce nouvel appareil (min)" extra-class="admin-field" :error="validationErrors.firstSeenGraceMinutes">' +
+                            '<input :value="form.firstSeenGraceMinutes" type="number" min="1" max="60" :aria-invalid="Boolean(validationErrors.firstSeenGraceMinutes)" @input="markDirty(); form.firstSeenGraceMinutes = $event.target.value">' +
                         '</ui-field>' +
-                        '<ui-field label="Polls avant alerte Teams" extra-class="admin-field">' +
-                            '<input :value="form.confirmsRequired" type="number" min="1" max="5" @input="markDirty(); form.confirmsRequired = $event.target.value">' +
+                        '<ui-field label="Polls avant alerte Teams" extra-class="admin-field" :error="validationErrors.confirmsRequired">' +
+                            '<input :value="form.confirmsRequired" type="number" min="1" max="5" :aria-invalid="Boolean(validationErrors.confirmsRequired)" @input="markDirty(); form.confirmsRequired = $event.target.value">' +
                         '</ui-field>' +
-                        '<ui-field label="Rétention heartbeats (j)" extra-class="admin-field">' +
-                            '<input :value="form.heartbeatTtlDays" type="number" min="1" max="365" @input="markDirty(); form.heartbeatTtlDays = $event.target.value">' +
+                        '<ui-field label="Rétention heartbeats (j)" extra-class="admin-field" :error="validationErrors.heartbeatTtlDays">' +
+                            '<input :value="form.heartbeatTtlDays" type="number" min="1" max="365" :aria-invalid="Boolean(validationErrors.heartbeatTtlDays)" @input="markDirty(); form.heartbeatTtlDays = $event.target.value">' +
                         '</ui-field>' +
                         '<ui-field label="Intervalle poll Balena" extra-class="admin-field" hint="Le tick Node-RED est 2 min. Un intervalle plus long est respecté ; plus court ne descend pas sous le tick.">' +
                             '<select :value="form.pollIntervalMs" @change="markDirty(); form.pollIntervalMs = Number($event.target.value)">' +
@@ -193,7 +213,7 @@
                     '</div>' +
                     '<div class="toolbar-actions">' +
                         '<ui-button variant="secondary" :disabled="!dirty" @click="hydrate">Annuler</ui-button>' +
-                        '<ui-button :loading="saving" :disabled="!dirty && !saving" @click="save">Enregistrer</ui-button>' +
+                        '<ui-button :loading="saving" :disabled="saving || !dirty || Object.keys(validationErrors).length > 0" @click="save">{{ saving ? \'Enregistrement…\' : \'Enregistrer\' }}</ui-button>' +
                     '</div>' +
                 '</article>' +
                 '<article class="integration-card">' +
@@ -211,7 +231,7 @@
                                     '<td>{{ item.name }}</td>' +
                                     '<td><code class="device-id">{{ item.uuid }}</code></td>' +
                                     '<td>{{ formatDateTime(item.enrolledAt) }}</td>' +
-                                    '<td><button class="detail-button" type="button" @click="$emit(\'unenroll\', item.uuid)">Retirer</button></td>' +
+                                    '<td><button class="detail-button" type="button" @click="confirmUnenroll(item)">Retirer</button></td>' +
                                 '</tr>' +
                             '</tbody>' +
                         '</table>' +

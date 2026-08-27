@@ -59,6 +59,24 @@
                 if (msg && msg.topic === 'flows_error' && typeof handlers.onFlowsError === 'function') {
                     handlers.onFlowsError(msg.payload);
                 }
+                if (msg && msg.topic === 'anomalies_snapshot' && typeof handlers.onAnomaliesSnapshot === 'function') {
+                    handlers.onAnomaliesSnapshot(msg.payload);
+                }
+                if (msg && msg.topic === 'anomalies_detail' && typeof handlers.onAnomaliesDetail === 'function') {
+                    handlers.onAnomaliesDetail(msg.payload);
+                }
+                if (msg && msg.topic === 'anomalies_error' && typeof handlers.onAnomaliesError === 'function') {
+                    handlers.onAnomaliesError(msg.payload);
+                }
+                if (msg && msg.topic === 'events_snapshot' && typeof handlers.onEventsSnapshot === 'function') {
+                    handlers.onEventsSnapshot(msg.payload);
+                }
+                if (msg && msg.topic === 'events_detail' && typeof handlers.onEventsDetail === 'function') {
+                    handlers.onEventsDetail(msg.payload);
+                }
+                if (msg && msg.topic === 'events_error' && typeof handlers.onEventsError === 'function') {
+                    handlers.onEventsError(msg.payload);
+                }
             });
             client.onChange('ioConnected', function (connected) {
                 handlers.onConnection(Boolean(connected));

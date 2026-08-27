@@ -7,7 +7,7 @@
     global.WatchdogHub.components = global.WatchdogHub.components || {};
     global.WatchdogHub.components.IncidentDetail = {
         name: 'IncidentDetail',
-        emits: ['close', 'note', 'transition', 'resolve'],
+        emits: ['close', 'note', 'transition', 'resolve', 'open-related', 'open-flow'],
         props: {
             detail: { type: Object, required: true },
             opener: { type: Object, default: null },
@@ -81,12 +81,20 @@
                     comment: this.resolutionComment.trim()
                 });
                 this.resolutionComment = '';
+            },
+            openRelated: function (item) {
+                if (item && item.target_kind === 'flow') {
+                    this.$emit('open-related', item);
+                }
+            },
+            openFlow: function () {
+                if (this.incident.flow_id) this.$emit('open-flow', this.incident.flow_id);
             }
         },
         template:
             '<ui-drawer :opener="opener" title-id="incident-detail-title" description-id="incident-detail-description" @close="close">' +
                 '<div class="modal__header side-drawer__header">' +
-                    '<div><p class="eyebrow">Gestion d’incident</p><h2 id="incident-detail-title">{{ incident.flow_id }}</h2></div>' +
+                    '<div><p class="eyebrow">Gestion d’incident</p><h2 id="incident-detail-title"><button v-if="incident.flow_id" type="button" class="related-link" @click="openFlow">{{ incident.flow_id }}</button><span v-else>Incident</span></h2></div>' +
                     '<button data-drawer-initial-focus class="modal__close" type="button" aria-label="Fermer le détail" @click="close">×</button>' +
                 '</div>' +
                 '<p id="incident-detail-description" class="incident-id">{{ incident.incident_id }}</p>' +
@@ -131,7 +139,7 @@
                 '</section>' +
                 '<section v-if="detail.links.length" class="transition-history" aria-labelledby="incident-links-title">' +
                     '<h3 id="incident-links-title">Éléments liés</h3>' +
-                    '<ul><li v-for="item in detail.links" :key="item.target_kind + item.target_id"><strong>{{ item.target_kind }}</strong> : <code>{{ item.target_id }}</code></li></ul>' +
+                    '<ul><li v-for="item in detail.links" :key="item.target_kind + item.target_id"><strong>{{ item.target_kind }}</strong> : <button v-if="item.target_kind === \'flow\'" type="button" class="related-link" @click="openRelated(item)">{{ item.target_id }}</button><code v-else :title="\'Navigation disponible lorsque l’espace \' + item.target_kind + \' sera exposé\'">{{ item.target_id }}</code></li></ul>' +
                 '</section>' +
             '</ui-drawer>'
     };

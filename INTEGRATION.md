@@ -67,7 +67,7 @@ Le dashboard `/watchdog-hub#admin` envoie des actions UIbuilder. Node-RED persis
 |--------|--------|
 | `fleet_snapshot_get` | Snapshot opérateur + bloc `admin` |
 | `fleet_refresh_request` | Poll Balena forcé (anti-rebond 15 s) |
-| `fleet_admin_save` | Enregistre la config UI puis relance un poll |
+| `fleet_admin_save` | Enregistre la config UI, dont la liste des fleets, puis relance un poll |
 | `fleet_device_enroll` | Pré-déclare un UUID (inventaire manuel) |
 | `fleet_device_unenroll` | Retire un UUID manuel |
 | `fleet_teams_test` | Carte Teams de test (même pipeline que le bouton flow) |
@@ -106,7 +106,11 @@ Les alertes Teams ne partent qu'après **N polls Balena consécutifs** (défaut 
 | `TEAMS_WEBHOOK_URL` | Alertes device (flow 03) | Alertes fleet (flow 04) |
 | Broker MQTT | Configuré dans nodes MQTT | Idem |
 
-Variables fleet uniquement : `BALENA_API_TOKEN`, `BALENA_APP_ID`, `FLEET_HEARTBEAT_TTL_DAYS`.
+Variables fleet uniquement : `BALENA_API_TOKEN`, `BALENA_APP_IDS`, `BALENA_APP_ID` (repli) et `FLEET_HEARTBEAT_TTL_DAYS`.
+
+`BALENA_APP_IDS` accepte plusieurs IDs numériques, slugs ou UUID de devices,
+séparés par une virgule ou un retour à la ligne. Les résultats sont fusionnés et
+dédupliqués par UUID. Une erreur sur une fleet n'annule pas les résultats des autres.
 
 ## Tests de contrat
 

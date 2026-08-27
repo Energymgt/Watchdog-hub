@@ -4,7 +4,7 @@
         "type": "tab",
         "label": "Watchdog Hub",
         "disabled": false,
-        "info": "Import siège uniquement. Variables (Docker / Portainer, sinon onglet Environment) : TEAMS_WEBHOOK_URL, BALENA_API_TOKEN (device:read), BALENA_APP_ID. Bouton Test Teams pour valider le webhook."
+        "info": "Import siège uniquement. Variables (Docker / Portainer, sinon onglet Environment) : TEAMS_WEBHOOK_URL, BALENA_API_TOKEN (device:read), BALENA_APP_IDS (repli BALENA_APP_ID). Bouton Test Teams pour valider le webhook."
     },
     {
         "id": "c4b9e2d1a8f35002",
@@ -27,6 +27,26 @@
         "y": 160,
         "wires": [
             [
+                "b4e71a9c3d8f6202"
+            ]
+        ]
+    },
+    {
+        "id": "b4e71a9c3d8f6202",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Normalize Balena fleet config",
+        "func": "const cfg = flow.get('fleetAdminConfig');\nif (cfg && typeof cfg === 'object' && !Array.isArray(cfg) && cfg.balenaAppId) {\n    const appIds = String(cfg.balenaAppId).trim();\n    if (cfg.balenaAppIds !== appIds) {\n        cfg.balenaAppIds = appIds;\n        flow.set('fleetAdminConfig', cfg);\n    }\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 110,
+        "wires": [
+            [
                 "c4b9e2d1a8f35003"
             ]
         ]
@@ -36,7 +56,7 @@
         "type": "function",
         "z": "c4b9e2d1a8f35001",
         "name": "Prepare Balena API",
-        "func": "const cfg = flow.get('fleetAdminConfig') || {};\nconst token = String(cfg.balenaToken || env.get('BALENA_API_TOKEN') || '').trim();\nconst appRef = String(cfg.balenaAppId || env.get('BALENA_APP_ID') || '').trim();\nif (!msg.forcePoll) {\n    const pollMs = Number(cfg.pollIntervalMs);\n    const interval = Number.isFinite(pollMs) && pollMs >= 60000 ? pollMs : 120000;\n    const last = Number(flow.get('fleetLastPollAt') || 0);\n    if (last && Date.now() - last < interval - 2000) {\n        node.status({ fill: 'grey', shape: 'ring', text: 'poll reporté' });\n        return null;\n    }\n}\nif (!token || !appRef) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'BALENA_API_TOKEN / BALENA_APP_ID manquants' });\n    return null;\n}\n\nconst select = 'uuid,device_name,is_online,last_connectivity_event,overall_status,api_heartbeat_state';\nmsg.method = 'GET';\nmsg.headers = {\n    Authorization: 'Bearer ' + token,\n    Accept: 'application/json'\n};\nmsg.payload = {};\n\nif (/^[0-9]+$/.test(appRef)) {\n    msg.balenaStep = 'listDevices';\n    msg.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent('belongs_to__application eq ' + appRef) + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    msg.balenaPage = 0;\n    msg.balenaDevices = [];\n    node.status({ fill: 'blue', shape: 'dot', text: 'fleet id ' + appRef });\n    return msg;\n}\n\nif (/^[a-f0-9]{32}$/i.test(appRef)) {\n    const uuid = appRef.toLowerCase();\n    msg.balenaStep = 'resolveApp';\n    msg.url = \"https://api.balena-cloud.com/v6/device(uuid='\" + uuid + \"')?$select=uuid,belongs_to__application\";\n    node.status({ fill: 'blue', shape: 'dot', text: 'uuid -> fleet' });\n    return msg;\n}\n\nif (/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(appRef)) {\n    msg.balenaStep = 'listDevices';\n    msg.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent(\"belongs_to__application/app_name eq '\" + appRef + \"'\") + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    msg.balenaPage = 0;\n    msg.balenaDevices = [];\n    node.status({ fill: 'blue', shape: 'dot', text: 'slug ' + appRef });\n    return msg;\n}\n\nnode.status({ fill: 'red', shape: 'ring', text: 'BALENA_APP_ID invalide' });\nnode.error('BALENA_APP_ID: ID fleet numerique, slug, ou UUID device', msg);\nreturn null;",
+        "func": "const cfg = flow.get('fleetAdminConfig') || {};\nconst token = String(cfg.balenaToken || env.get('BALENA_API_TOKEN') || '').trim();\nconst configuredRefs = String(cfg.balenaAppIds || env.get('BALENA_APP_IDS') || cfg.balenaAppId || env.get('BALENA_APP_ID') || '').trim();\nif (!msg.forcePoll) {\n    const pollMs = Number(cfg.pollIntervalMs);\n    const interval = Number.isFinite(pollMs) && pollMs >= 60000 ? pollMs : 120000;\n    const last = Number(flow.get('fleetLastPollAt') || 0);\n    if (last && Date.now() - last < interval - 2000) {\n        node.status({ fill: 'grey', shape: 'ring', text: 'poll reporté' });\n        return null;\n    }\n}\nfunction validRef(value) {\n    return /^[0-9]+$/.test(value) || /^[a-f0-9]{32}$/i.test(value) || /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(value);\n}\nconst seen = {};\nconst invalid = [];\nconst refs = configuredRefs.split(/[\\r\\n,;]+/).map(function (value) { return value.trim(); }).filter(function (value) {\n    if (!value || seen[value]) return false;\n    seen[value] = true;\n    if (!validRef(value)) {\n        invalid.push(value);\n        return false;\n    }\n    return true;\n}).slice(0, 100);\nif (!token || refs.length === 0) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'BALENA_API_TOKEN / BALENA_APP_IDS manquants' });\n    if (configuredRefs && refs.length === 0) node.error('BALENA_APP_IDS ne contient aucun ID fleet, slug ou UUID device valide', msg);\n    return null;\n}\nconst select = 'uuid,device_name,is_online,last_connectivity_event,overall_status,api_heartbeat_state';\nfunction prepareRef(target, appRef) {\n    target.balenaCurrentRef = appRef;\n    target.balenaPage = 0;\n    target.method = 'GET';\n    target.headers = { Authorization: target.balenaAuthorization, Accept: 'application/json' };\n    target.payload = {};\n    if (/^[0-9]+$/.test(appRef)) {\n        target.balenaStep = 'listDevices';\n        target.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent('belongs_to__application eq ' + appRef) + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    } else if (/^[a-f0-9]{32}$/i.test(appRef)) {\n        target.balenaStep = 'resolveApp';\n        target.url = \"https://api.balena-cloud.com/v6/device(uuid='\" + appRef.toLowerCase() + \"')?$select=uuid,belongs_to__application\";\n    } else {\n        target.balenaStep = 'listDevices';\n        target.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent(\"belongs_to__application/app_name eq '\" + appRef + \"'\") + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    }\n    return target;\n}\nmsg.balenaAuthorization = 'Bearer ' + token;\nmsg.balenaAppRefs = refs;\nmsg.balenaAppIndex = 0;\nmsg.balenaDevices = [];\nmsg.balenaSuccessRefs = [];\nmsg.balenaFailures = invalid.map(function (value) { return { ref: value, message: 'référence invalide' }; });\nnode.status({ fill: 'blue', shape: 'dot', text: 'fleet 1/' + refs.length + ' ' + refs[0] });\nreturn prepareRef(msg, refs[0]);",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -79,7 +99,7 @@
         "type": "function",
         "z": "c4b9e2d1a8f35001",
         "name": "Resolve Balena fleet",
-        "func": "const select = 'uuid,device_name,is_online,last_connectivity_event,overall_status,api_heartbeat_state';\nconst step = msg.balenaStep || 'listDevices';\nconst code = Number(msg.statusCode || 0) || 0;\n\nif (code >= 400) {\n    let detail = '';\n    try { detail = typeof msg.payload === 'object' ? JSON.stringify(msg.payload).slice(0, 400) : String(msg.payload || ''); } catch (e) { detail = String(msg.payload || ''); }\n    flow.set('fleetLastError', { source: 'balena', at: Date.now(), message: 'HTTP ' + code + ' ' + detail });\n    node.status({ fill: 'red', shape: 'ring', text: 'Balena HTTP ' + code });\n    node.warn('Balena API HTTP ' + code + ' ' + detail);\n    return [null, null];\n}\n\nif (step === 'resolveApp') {\n    const body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\n    const row = Array.isArray(body.d) ? (body.d[0] || {}) : body;\n    let appId = row.belongs_to__application;\n    if (appId && typeof appId === 'object') appId = appId.__id || appId.id;\n    appId = Number(appId);\n    if (!Number.isFinite(appId) || appId <= 0) {\n        flow.set('fleetLastError', { source: 'balena', at: Date.now(), message: 'Fleet introuvable pour UUID' });\n        node.status({ fill: 'red', shape: 'ring', text: 'fleet introuvable pour UUID' });\n        node.error('Impossible de resoudre belongs_to__application: ' + JSON.stringify(row), msg);\n        return [null, null];\n    }\n    const rawAuth = String((msg.headers && (msg.headers.Authorization || msg.headers.authorization)) || '').trim();\n    const token = rawAuth || ('Bearer ' + String(env.get('BALENA_API_TOKEN') || '').trim());\n    msg.balenaStep = 'listDevices';\n    msg.balenaPage = 0;\n    msg.balenaDevices = [];\n    msg.method = 'GET';\n    msg.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent('belongs_to__application eq ' + appId)\n        + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    msg.headers = { Authorization: token.indexOf('Bearer ') === 0 ? token : ('Bearer ' + token), Accept: 'application/json' };\n    msg.payload = {};\n    node.status({ fill: 'blue', shape: 'dot', text: 'fleet id ' + appId });\n    return [null, msg];\n}\n\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst pageRows = Array.isArray(body.d) ? body.d : [];\nconst accumulated = Array.isArray(msg.balenaDevices) ? msg.balenaDevices.concat(pageRows) : pageRows.slice();\nconst page = Number(msg.balenaPage || 0);\nif (pageRows.length === 1000 && page < 99) {\n    msg.balenaPage = page + 1;\n    msg.balenaDevices = accumulated;\n    msg.url = String(msg.url).replace(/&\\$skip=\\d+/, '&$skip=' + ((page + 1) * 1000));\n    msg.payload = {};\n    node.status({ fill: 'blue', shape: 'dot', text: accumulated.length + ' devices...' });\n    return [null, msg];\n}\nmsg.payload = { d: accumulated };\ndelete msg.balenaDevices;\nflow.set('fleetLastPollAt', Date.now());\nflow.set('fleetLastError', null);\nreturn [msg, null];",
+        "func": "const select = 'uuid,device_name,is_online,last_connectivity_event,overall_status,api_heartbeat_state';\nconst refs = Array.isArray(msg.balenaAppRefs) ? msg.balenaAppRefs : [];\nconst currentRef = String(msg.balenaCurrentRef || refs[Number(msg.balenaAppIndex || 0)] || '');\nconst step = msg.balenaStep || 'listDevices';\nconst code = Number(msg.statusCode || 0) || 0;\nfunction requestRef(target, appRef) {\n    target.balenaCurrentRef = appRef;\n    target.balenaPage = 0;\n    target.method = 'GET';\n    target.headers = { Authorization: target.balenaAuthorization, Accept: 'application/json' };\n    target.payload = {};\n    if (/^[0-9]+$/.test(appRef)) {\n        target.balenaStep = 'listDevices';\n        target.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent('belongs_to__application eq ' + appRef) + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    } else if (/^[a-f0-9]{32}$/i.test(appRef)) {\n        target.balenaStep = 'resolveApp';\n        target.url = \"https://api.balena-cloud.com/v6/device(uuid='\" + appRef.toLowerCase() + \"')?$select=uuid,belongs_to__application\";\n    } else {\n        target.balenaStep = 'listDevices';\n        target.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent(\"belongs_to__application/app_name eq '\" + appRef + \"'\") + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    }\n    node.status({ fill: 'blue', shape: 'dot', text: 'fleet ' + (Number(target.balenaAppIndex || 0) + 1) + '/' + refs.length + ' ' + appRef });\n    return target;\n}\nfunction complete(target) {\n    const successes = Array.isArray(target.balenaSuccessRefs) ? target.balenaSuccessRefs : [];\n    const failures = Array.isArray(target.balenaFailures) ? target.balenaFailures : [];\n    if (successes.length === 0) {\n        const message = failures.map(function (item) { return item.ref + ': ' + item.message; }).join('; ').slice(0, 800) || 'Aucune fleet Balena interrogée';\n        flow.set('fleetLastError', { source: 'balena', at: Date.now(), message: message });\n        node.status({ fill: 'red', shape: 'ring', text: 'échec de toutes les fleets' });\n        return null;\n    }\n    let devices = Array.isArray(target.balenaDevices) ? target.balenaDevices.slice() : [];\n    if (failures.length) {\n        const failedRefs = {};\n        failures.forEach(function (item) { failedRefs[item.ref] = true; });\n        const previous = flow.get('fleetBalenaDevices') || [];\n        previous.forEach(function (device) {\n            if (!device || !device.uuid) return;\n            if (!device._balenaAppRef || failedRefs[device._balenaAppRef]) devices.push(device);\n        });\n    }\n    const byUuid = {};\n    devices.forEach(function (device) {\n        const uuid = String(device && device.uuid || '').trim();\n        if (uuid && !byUuid[uuid]) byUuid[uuid] = device;\n    });\n    target.payload = { d: Object.keys(byUuid).sort().map(function (uuid) { return byUuid[uuid]; }) };\n    delete target.balenaDevices;\n    flow.set('fleetLastPollAt', Date.now());\n    flow.set('fleetLastError', failures.length ? {\n        source: 'balena',\n        at: Date.now(),\n        message: failures.length + ' fleet(s) en échec: ' + failures.map(function (item) { return item.ref + ' (' + item.message + ')'; }).join(', ').slice(0, 700)\n    } : null);\n    node.status({ fill: failures.length ? 'yellow' : 'green', shape: 'dot', text: successes.length + '/' + refs.length + ' fleets, ' + target.payload.d.length + ' devices' });\n    return target;\n}\nfunction advanceFailure(target, message) {\n    if (!Array.isArray(target.balenaFailures)) target.balenaFailures = [];\n    target.balenaFailures.push({ ref: currentRef, message: String(message || 'échec inconnu').slice(0, 300) });\n    target.balenaAppIndex = Number(target.balenaAppIndex || 0) + 1;\n    if (target.balenaAppIndex < refs.length) return [null, requestRef(target, refs[target.balenaAppIndex])];\n    const completed = complete(target);\n    return [completed, null];\n}\nif (code >= 400 || msg.error) {\n    let detail = msg.error && msg.error.message ? msg.error.message : '';\n    try { if (!detail) detail = typeof msg.payload === 'object' ? JSON.stringify(msg.payload).slice(0, 240) : String(msg.payload || ''); } catch (e) { detail = String(msg.payload || ''); }\n    node.warn('Balena fleet ' + currentRef + ' HTTP ' + code + ' ' + detail);\n    return advanceFailure(msg, 'HTTP ' + code + (detail ? ' ' + detail : ''));\n}\nif (step === 'resolveApp') {\n    const body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\n    const row = Array.isArray(body.d) ? (body.d[0] || {}) : body;\n    let appId = row.belongs_to__application;\n    if (appId && typeof appId === 'object') appId = appId.__id || appId.id;\n    appId = Number(appId);\n    if (!Number.isFinite(appId) || appId <= 0) return advanceFailure(msg, 'fleet introuvable pour UUID');\n    msg.balenaStep = 'listDevices';\n    msg.balenaPage = 0;\n    msg.method = 'GET';\n    msg.url = 'https://api.balena-cloud.com/v6/device?$filter=' + encodeURIComponent('belongs_to__application eq ' + appId) + '&$select=' + select + '&$orderby=uuid&$top=1000&$skip=0';\n    msg.headers = { Authorization: msg.balenaAuthorization, Accept: 'application/json' };\n    msg.payload = {};\n    return [null, msg];\n}\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst pageRows = (Array.isArray(body.d) ? body.d : []).map(function (row) {\n    return Object.assign({}, row, { _balenaAppRef: currentRef });\n});\nmsg.balenaDevices = (Array.isArray(msg.balenaDevices) ? msg.balenaDevices : []).concat(pageRows);\nconst page = Number(msg.balenaPage || 0);\nif (pageRows.length === 1000 && page < 99) {\n    msg.balenaPage = page + 1;\n    msg.url = String(msg.url).replace(/&\\$skip=\\d+/, '&$skip=' + ((page + 1) * 1000));\n    msg.headers = { Authorization: msg.balenaAuthorization, Accept: 'application/json' };\n    msg.payload = {};\n    return [null, msg];\n}\nif (!Array.isArray(msg.balenaSuccessRefs)) msg.balenaSuccessRefs = [];\nmsg.balenaSuccessRefs.push(currentRef);\nmsg.balenaAppIndex = Number(msg.balenaAppIndex || 0) + 1;\nif (msg.balenaAppIndex < refs.length) return [null, requestRef(msg, refs[msg.balenaAppIndex])];\nreturn [complete(msg), null];",
         "outputs": 2,
         "timeout": "",
         "noerr": 0,
@@ -263,7 +283,7 @@
         "type": "comment",
         "z": "c4b9e2d1a8f35001",
         "name": "Import siège uniquement",
-        "info": "1) Canal Teams Weebox → … → Workflows → « Publier dans un canal lorsqu’une demande webhook est reçue ».\n2) Copier l’URL HTTPS (logic.azure.com) dans l’onglet Watchdog Hub → TEAMS_WEBHOOK_URL.\n3) Balena Cloud → Access tokens (device:read) → BALENA_API_TOKEN.\n4) BALENA_APP_ID accepte un ID fleet numérique, un slug ou un UUID device.\n5) Broker MQTT: iot.energymgt.io — réutiliser le config existant à l’import, puis user/pass si le broker l’exige.\n6) Deploy, puis bouton « Test Teams ».\\n7) Dashboard: /watchdog-hub — vue Flotte + Administration (config runtime persistée dans le contexte Node-RED, repli sur les variables d’environnement).",
+        "info": "1) Canal Teams Weebox → … → Workflows → « Publier dans un canal lorsqu’une demande webhook est reçue ».\n2) Copier l’URL HTTPS (logic.azure.com) dans l’onglet Watchdog Hub → TEAMS_WEBHOOK_URL.\n3) Balena Cloud → Access tokens (device:read) → BALENA_API_TOKEN.\n4) BALENA_APP_IDS accepte des IDs fleet numériques, slugs ou UUID devices séparés par une virgule. BALENA_APP_ID reste le repli mono-fleet.\n5) Broker MQTT: iot.energymgt.io — réutiliser le config existant à l’import, puis user/pass si le broker l’exige.\n6) Deploy, puis bouton « Test Teams ».\\n7) Dashboard: /watchdog-hub — vue Flotte + Administration (config runtime persistée dans le contexte Node-RED, repli sur les variables d’environnement).",
         "x": 180,
         "y": 60,
         "wires": []
@@ -367,9 +387,145 @@
         "wires": [
             [
                 "d5ca13e2b9f46102",
-                "f10a000000000001"
+                "f10a000000000001",
+                "a10a000000000001",
+                "b10a000000000001"
             ],
             []
+        ]
+    },
+    {
+        "id": "a10a000000000001",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Anomalies UI Actions",
+        "func": "const request = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(request.action || '');\nconst data = (request.data && typeof request.data === 'object') ? request.data : {};\nconst allowed = ['anomalies_snapshot_get', 'anomalies_get'];\nif (allowed.indexOf(action) === -1) return [null, null];\n\nmsg._uibOrigin = msg._socketId;\nmsg._anomaliesAction = action;\nconst port = Number(env.get('WATCHDOG_INGEST_PORT')) || 8091;\nconst base = 'http://127.0.0.1:' + port;\nconst token = String(env.get('WATCHDOG_INGEST_TOKEN') || '').trim();\nmsg.headers = { Accept: 'application/json' };\nif (token) msg.headers['X-Watchdog-Token'] = token;\n\nfunction fail(error, message) {\n    const outgoing = { topic: 'anomalies_error', payload: { ok: false, error: error, message: message, operation: action } };\n    if (msg._uibOrigin) outgoing._uib = { originator: msg._uibOrigin };\n    return [null, outgoing];\n}\nfunction anomalyId() {\n    const value = String(data.anomaly_id || '').trim();\n    return value && value.length <= 160 && !/[\\\\/?#]/.test(value) ? value : '';\n}\nif (action === 'anomalies_snapshot_get') {\n    msg.method = 'GET';\n    msg.url = base + '/v1/anomalies?limit=100';\n    msg.payload = {};\n    msg._anomaliesStep = 'snapshot';\n    return [msg, null];\n}\nconst id = anomalyId();\nif (!id) return fail('invalid_anomaly_id', 'Identifiant d’anomalie invalide.');\nmsg.method = 'GET';\nmsg.url = base + '/v1/anomalies/' + encodeURIComponent(id);\nmsg.payload = {};\nmsg._anomaliesStep = 'detail';\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 310,
+        "y": 680,
+        "wires": [
+            [
+                "a10a000000000002"
+            ],
+            [
+                "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "a10a000000000002",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Watchdog anomalies API",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "x": 570,
+        "y": 680,
+        "wires": [
+            [
+                "a10a000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "a10a000000000003",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Build Anomalies UI Response",
+        "func": "const code = Number(msg.statusCode || 0);\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(msg._anomaliesAction || '');\nfunction targetUi(topic, payload) {\n    const outgoing = { topic: topic, payload: payload };\n    if (msg._uibOrigin) outgoing._uib = { originator: msg._uibOrigin };\n    return [null, outgoing];\n}\nfunction apiError() {\n    const error = String(body.error || (msg.error && msg.error.message) || 'registry_unavailable');\n    const labels = {\n        unauthorized: 'Accès à l’API Watchdog refusé.',\n        not_found: 'L’anomalie demandée est introuvable.',\n        invalid_anomaly_id: 'Identifiant d’anomalie invalide.',\n        registry_unavailable: 'Le registre Watchdog est indisponible.'\n    };\n    return targetUi('anomalies_error', { ok: false, error: error, message: labels[error] || 'Échec de la lecture des anomalies.', statusCode: code || null, operation: action });\n}\nif (code < 200 || code >= 300 || body.ok === false || msg.error) return apiError();\nif (msg._anomaliesStep === 'detail') return targetUi('anomalies_detail', body);\nreturn targetUi('anomalies_snapshot', body);",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 830,
+        "y": 680,
+        "wires": [
+            [],
+            [
+                "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "b10a000000000001",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Events UI Actions",
+        "func": "const request = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(request.action || '');\nconst data = (request.data && typeof request.data === 'object') ? request.data : {};\nconst allowed = ['events_snapshot_get', 'events_get'];\nif (allowed.indexOf(action) === -1) return [null, null];\nmsg._uibOrigin = msg._socketId;\nmsg._eventsAction = action;\nconst port = Number(env.get('WATCHDOG_INGEST_PORT')) || 8091;\nconst base = 'http://127.0.0.1:' + port;\nconst token = String(env.get('WATCHDOG_INGEST_TOKEN') || '').trim();\nmsg.headers = { Accept: 'application/json' };\nif (token) msg.headers['X-Watchdog-Token'] = token;\nfunction fail(error, message) {\n    const outgoing = { topic: 'events_error', payload: { ok: false, error: error, message: message, operation: action } };\n    if (msg._uibOrigin) outgoing._uib = { originator: msg._uibOrigin };\n    return [null, outgoing];\n}\nfunction eventId() {\n    const value = String(data.event_id || '').trim();\n    return value && value.length <= 160 && !/[\\\\/?#]/.test(value) ? value : '';\n}\nif (action === 'events_snapshot_get') {\n    msg.method = 'GET';\n    msg.url = base + '/v1/events?limit=100';\n    msg.payload = {};\n    msg._eventsStep = 'snapshot';\n    return [msg, null];\n}\nconst id = eventId();\nif (!id) return fail('invalid_event_id', 'Identifiant d’événement invalide.');\nmsg.method = 'GET';\nmsg.url = base + '/v1/events/' + encodeURIComponent(id);\nmsg.payload = {};\nmsg._eventsStep = 'detail';\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 310,
+        "y": 740,
+        "wires": [
+            [
+                "b10a000000000002"
+            ],
+            [
+                "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "b10a000000000002",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Watchdog events API",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "x": 570,
+        "y": 740,
+        "wires": [
+            [
+                "b10a000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "b10a000000000003",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Build Events UI Response",
+        "func": "const code = Number(msg.statusCode || 0);\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(msg._eventsAction || '');\nfunction targetUi(topic, payload) {\n    const outgoing = { topic: topic, payload: payload };\n    if (msg._uibOrigin) outgoing._uib = { originator: msg._uibOrigin };\n    return [null, outgoing];\n}\nfunction apiError() {\n    const error = String(body.error || (msg.error && msg.error.message) || 'registry_unavailable');\n    const labels = {\n        unauthorized: 'Accès à l’API Watchdog refusé.',\n        not_found: 'L’événement demandé est introuvable.',\n        invalid_event_id: 'Identifiant d’événement invalide.',\n        registry_unavailable: 'Le registre Watchdog est indisponible.'\n    };\n    return targetUi('events_error', { ok: false, error: error, message: labels[error] || 'Échec de la lecture des événements.', statusCode: code || null, operation: action });\n}\nif (code < 200 || code >= 300 || body.ok === false || msg.error) return apiError();\nif (msg._eventsStep === 'detail') return targetUi('events_detail', body);\nreturn targetUi('events_snapshot', body);",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 830,
+        "y": 740,
+        "wires": [
+            [],
+            [
+                "d5ca13e2b9f46101"
+            ]
         ]
     },
     {
@@ -391,7 +547,7 @@
                 "d5ca13e2b9f46103"
             ],
             [
-                "c4b9e2d1a8f35003"
+                "b4e71a9c3d8f6202"
             ],
             [
                 "c4b9e2d1a8f3500f"
@@ -500,6 +656,26 @@
         "finalize": "",
         "libs": [],
         "x": 760,
+        "y": 500,
+        "wires": [
+            [
+                "b4e71a9c3d8f6201"
+            ]
+        ]
+    },
+    {
+        "id": "b4e71a9c3d8f6201",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Expose multi-fleet config",
+        "func": "const cfg = flow.get('fleetAdminConfig') || {};\nconst appIds = String(cfg.balenaAppIds || env.get('BALENA_APP_IDS') || cfg.balenaAppId || env.get('BALENA_APP_ID') || '').trim();\nconst snapshot = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nif (snapshot.admin && snapshot.admin.balena) {\n    snapshot.admin.balena.appIds = appIds;\n    snapshot.admin.balena.appId = appIds;\n    snapshot.admin.balena.configured = !!snapshot.admin.balena.tokenSet && !!appIds;\n    snapshot.admin.balena.source = cfg.balenaToken || cfg.balenaAppIds || cfg.balenaAppId ? 'ui' : (env.get('BALENA_API_TOKEN') || env.get('BALENA_APP_IDS') || env.get('BALENA_APP_ID') ? 'env' : 'none');\n}\nmsg.payload = snapshot;\nflow.set('fleetSnapshot', snapshot);\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1000,
         "y": 500,
         "wires": [
             [

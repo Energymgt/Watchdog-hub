@@ -117,7 +117,8 @@ Voir `.env.example`. Principales :
 - `ENCRYPTION_KEY` : secret fixe de chiffrement des credentials.
 - `TEAMS_WEBHOOK_URL` : URL du Workflow Teams.
 - `BALENA_API_TOKEN` : token Balena en lecture seule.
-- `BALENA_APP_ID` : ID fleet, slug ou UUID d'un device de la fleet.
+- `BALENA_APP_IDS` : liste d'IDs fleet, slugs ou UUID de devices, séparés par une virgule ou un retour à la ligne.
+- `BALENA_APP_ID` : repli rétrocompatible lorsqu'une seule fleet est supervisée.
 - `FLEET_HEARTBEAT_TTL_DAYS` : rétention mémoire des heartbeats (défaut 30).
 - `FORCE_COPY_FLOWS` : `true` remplace `/data/flows.json` par le flow de l'image.
 - `WATCHDOG_INGEST_TOKEN` : secret partagé pour `/v1/*` (header `X-Watchdog-Token` ou `Authorization: Bearer`). Vide = pas d'auth. Production : à poser avant de publier le port 8091.
@@ -134,7 +135,11 @@ Ne jamais committer les valeurs de secrets.
    `flows/04_Watchdog_Hub.json`, puis déployer.
 5. Vérifier l'éditeur sur `http://SERVEUR:1884` et le dashboard sur
    `http://SERVEUR:1884/watchdog-hub`.
-6. Vérifier le test Teams, le poll Balena et les heartbeats MQTT.
+6. Vérifier le test Teams, le poll de toutes les fleets Balena et les heartbeats MQTT.
+
+Le poll Balena fusionne les devices par UUID. Si une fleet échoue, les autres
+restent actualisées et le dernier inventaire connu de la fleet en échec est conservé.
+L'erreur partielle reste visible dans le dashboard.
 
 ## Validation des alertes
 

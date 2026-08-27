@@ -5,6 +5,8 @@
         overview: true,
         incidents: true,
         flows: true,
+        anomalies: true,
+        events: true,
         fleet: true,
         admin: true
     };

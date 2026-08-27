@@ -117,7 +117,7 @@
         }
 
         function setView(view) {
-            state.view = ['overview', 'incidents', 'flows', 'fleet', 'admin'].indexOf(view) >= 0
+            state.view = ['overview', 'incidents', 'flows', 'anomalies', 'fleet', 'admin'].indexOf(view) >= 0
                 ? view
                 : 'overview';
             if (state.view !== 'fleet') state.selectedDevice = null;
