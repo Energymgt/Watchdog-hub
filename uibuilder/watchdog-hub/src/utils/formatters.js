@@ -122,6 +122,11 @@
             heartbeat: heartbeat,
             device: source.device || null,
             health: source.health || null,
+            protocol: asText(
+                (source.device && source.device.protocol)
+                    || (source.health && source.health.protocol),
+                'bacnet'
+            ).toLocaleLowerCase('fr-FR'),
             mqtt: source.mqtt || null,
             buffer: source.buffer || null,
             snapshot: source.snapshot || null,

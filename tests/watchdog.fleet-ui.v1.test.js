@@ -13,8 +13,11 @@ describe('Fleet Command Center', () => {
     it('conserve les données, les transitions et les contrôles Fleet existants', () => {
         const app = read('app.js');
         const store = read('store/fleet-store.js');
+        const formatters = read('utils/formatters.js');
         const activity = read('components/fleet/fleet-activity.js');
         const detail = read('components/fleet/device-detail.js');
+        const list = read('components/fleet/device-list.js');
+        const filters = read('components/ui/filter-bar.js');
 
         assert.match(app, /Fleet Command Center/);
         assert.match(app, /fleet_snapshot_get|requestSnapshot/);
@@ -28,6 +31,14 @@ describe('Fleet Command Center', () => {
         assert.match(detail, /device\.indicators\.bacnet/);
         assert.match(detail, /device\.indicators\.mqtt/);
         assert.match(detail, /device\.indicators\.buffer/);
+        assert.match(formatters, /source\.device && source\.device\.protocol/);
+        assert.match(list, /Service terrain/);
+        assert.match(filters, /Service terrain/);
+        assert.match(detail, /Dernière lecture Modbus/);
+        assert.match(detail, /Erreur Modbus récente/);
+        assert.match(detail, /Node-RED/);
+        assert.match(detail, /device\.mqtt\.status/);
+        assert.match(detail, /device\.buffer\.detail/);
     });
 
     it('rend les KPI de statut filtrables et ferme le détail par Escape', () => {

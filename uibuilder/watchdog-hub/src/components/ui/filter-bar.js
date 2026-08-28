@@ -76,7 +76,7 @@
                             '<option value="all">Toutes les sources</option>' +
                             '<option value="balena">Balena</option>' +
                             '<option value="heartbeat">Heartbeat</option>' +
-                            '<option value="bacnet">BACnet</option>' +
+                            '<option value="bacnet">Service terrain</option>' +
                             '<option value="buffer">Buffer</option>' +
                         '</select>' +
                     '</ui-field>' +

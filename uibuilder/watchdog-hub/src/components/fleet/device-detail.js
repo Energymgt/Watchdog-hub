@@ -76,6 +76,21 @@
                     ? 'Non disponible'
                     : String(value);
             },
+            protocolLabel: function (device) {
+                if (device && device.protocol === 'modbus') return 'Modbus';
+                if (device && device.protocol === 'bacnet') return 'BACnet';
+                return 'Service terrain';
+            },
+            nodeRedOk: function (device) {
+                var status = device && device.health && device.health.nodeRed;
+                return status && typeof status === 'object' ? status.ok : status;
+            },
+            errorMessage: function (error) {
+                if (!error) return '';
+                return typeof error === 'object'
+                    ? String(error.message || error.source || '')
+                    : String(error);
+            },
             close: function () {
                 this.$emit('close');
             }
@@ -105,10 +120,15 @@
                         '<dt>État confirmé</dt><dd>{{ device.confirmedState || \'Non disponible\' }}</dd>' +
                         '<dt>Statut global source</dt><dd>{{ device.overallStatus || \'Non disponible\' }}</dd>' +
                         '<dt>Sévérité</dt><dd>{{ device.severity }}</dd>' +
-                        '<dt>Santé BACnet</dt><dd>{{ indicatorLabel(device.indicators.bacnet) }}<span v-if="device.health && device.health.status"> — {{ device.health.status }}</span></dd>' +
-                        '<dt>MQTT gateway</dt><dd>{{ indicatorLabel(device.indicators.mqtt) }}<span v-if="device.mqtt && device.mqtt.lastError"> — {{ device.mqtt.lastError }}</span></dd>' +
-                        '<dt>Buffer</dt><dd>{{ indicatorLabel(device.indicators.buffer) }}<span v-if="device.buffer"> — {{ valueOrUnknown(device.buffer.pending) }} en attente<span v-if="device.buffer.lastError"> — {{ device.buffer.lastError }}</span></span></dd>' +
-                        '<dt>Équipements BACnet</dt><dd>{{ device.snapshot ? valueOrUnknown(device.snapshot.count) : \'Non disponible\' }}<span v-if="device.snapshot && device.snapshot.empty"> — snapshot vide</span></dd>' +
+                        '<dt>Santé {{ protocolLabel(device) }}</dt><dd>{{ indicatorLabel(device.indicators.bacnet) }}<span v-if="device.health && device.health.status"> : {{ device.health.status }}</span></dd>' +
+                        '<template v-if="device.protocol === \'modbus\' && device.health && device.health.modbus">' +
+                            '<dt>Dernière lecture Modbus</dt><dd>{{ formatDateTime(device.health.modbus.lastSuccessAt) }}<span v-if="device.health.modbus.lastSuccessAgeSec !== null && device.health.modbus.lastSuccessAgeSec !== undefined"> ({{ device.health.modbus.lastSuccessAgeSec }} s)</span></dd>' +
+                            '<dt>Erreur Modbus récente</dt><dd>{{ booleanLabel(device.health.modbus.recentError) }}<span v-if="device.health.modbus.lastError"> : {{ errorMessage(device.health.modbus.lastError) }}</span></dd>' +
+                        '</template>' +
+                        '<dt>Node-RED</dt><dd>{{ device.health && device.health.nodeRed !== undefined ? booleanLabel(nodeRedOk(device)) : \'Non disponible\' }}<span v-if="device.health && device.health.nodeRed && device.health.nodeRed.uptimeSec !== undefined"> (actif depuis {{ device.health.nodeRed.uptimeSec }} s)</span></dd>' +
+                        '<dt>MQTT gateway</dt><dd>{{ indicatorLabel(device.indicators.mqtt) }}<span v-if="device.mqtt && device.mqtt.status"> : {{ device.mqtt.status }}</span><span v-if="device.mqtt && device.mqtt.lastError"> : {{ errorMessage(device.mqtt.lastError) }}</span></dd>' +
+                        '<dt>File / buffer</dt><dd>{{ indicatorLabel(device.indicators.buffer) }}<span v-if="device.buffer"> : {{ valueOrUnknown(device.buffer.pending) }} en attente<span v-if="device.buffer.detail">, {{ device.buffer.detail }}</span><span v-if="device.buffer.lastError"> : {{ errorMessage(device.buffer.lastError) }}</span></span></dd>' +
+                        '<template v-if="device.protocol !== \'modbus\'"><dt>Équipements BACnet</dt><dd>{{ device.snapshot ? valueOrUnknown(device.snapshot.count) : \'Non disponible\' }}<span v-if="device.snapshot && device.snapshot.empty"> : snapshot vide</span></dd></template>' +
                         '<dt>Supervisor</dt><dd>{{ indicatorLabel(device.indicators.supervisor) }}<span v-if="device.supervisor && device.supervisor.unhealthy && device.supervisor.unhealthy.length"> — {{ device.supervisor.unhealthy.join(\', \') }}</span></dd>' +
                         '<dt>Application gateway</dt><dd>{{ device.device ? valueOrUnknown(device.device.app || device.device.application) : \'Non disponible\' }}</dd>' +
                         '<dt>Hôte gateway</dt><dd>{{ device.device ? valueOrUnknown(device.device.host || device.device.hostname) : \'Non disponible\' }}</dd>' +
