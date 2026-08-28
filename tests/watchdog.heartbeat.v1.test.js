@@ -53,6 +53,17 @@ describe('watchdog.heartbeat.v1', () => {
         assert.equal(result.ok, true, result.errors.join('; '));
     });
 
+    it('accepte un compteur buffer indisponible sans inventer une valeur', () => {
+        const heartbeat = readJson(KIT, 'examples', 'modbus-heartbeat.json');
+        heartbeat.buffer.pending = null;
+        const result = validateWatchdogHeartbeat(
+            heartbeat,
+            HEARTBEAT_SCHEMA,
+            `bacnet/gateway/${heartbeat.device.uuid}/heartbeat`
+        );
+        assert.equal(result.ok, true, result.errors.join('; '));
+    });
+
     it('rejette un UUID de topic différent du payload', () => {
         const heartbeat = readJson(KIT, 'examples', 'bacnet-heartbeat.json');
         const result = validateWatchdogHeartbeat(

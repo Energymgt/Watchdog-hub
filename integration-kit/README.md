@@ -57,7 +57,8 @@ Le message transmis à l'entrée link doit fournir :
 ```
 
 Pour Modbus, `health.protocol` et `health.modbus` sont obligatoires. Les
-exemples complets se trouvent dans `examples/`.
+exemples complets se trouvent dans `examples/`. `buffer.pending` peut valoir
+`null` lorsque le compteur est indisponible ; ne pas inventer une valeur zéro.
 
 ## 2. Producteur HTTP
 

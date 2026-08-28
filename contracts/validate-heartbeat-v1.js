@@ -89,7 +89,8 @@ function validateWatchdogHeartbeat(heartbeat, schema, topic) {
     if (isObject(heartbeat.buffer)) {
         const states = properties.buffer.properties.state.enum;
         if (!states.includes(heartbeat.buffer.state)) errors.push('buffer.state: valeur hors enum');
-        if (!Number.isInteger(heartbeat.buffer.pending) || heartbeat.buffer.pending < 0) {
+        if (heartbeat.buffer.pending !== null
+            && (!Number.isInteger(heartbeat.buffer.pending) || heartbeat.buffer.pending < 0)) {
             errors.push('buffer.pending: entier positif attendu');
         }
     }
