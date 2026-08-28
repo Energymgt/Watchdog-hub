@@ -1,0 +1,39 @@
+{
+  "schema": "watchdog.heartbeat.v1",
+  "ts": 1787904000000,
+  "device": {
+    "uuid": "abc123def456",
+    "name": "Gateway BACnet Exemple",
+    "app": "gateway-bacnet",
+    "host": "gateway-example",
+    "protocol": "bacnet"
+  },
+  "health": {
+    "ok": true,
+    "protocol": "bacnet",
+    "status": "healthy",
+    "bacnet_initialized": true,
+    "httpStatus": 200
+  },
+  "mqtt": {
+    "ok": true,
+    "connected": true,
+    "status": "connected"
+  },
+  "buffer": {
+    "state": "ok",
+    "pending": 0,
+    "warnAt": 1000000,
+    "criticalAt": 2000000,
+    "lastError": null
+  },
+  "snapshot": {
+    "count": 12,
+    "empty": false
+  },
+  "supervisor": {
+    "available": true,
+    "unhealthy": []
+  },
+  "grace": false
+}

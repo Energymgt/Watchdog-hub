@@ -136,7 +136,7 @@
                 "e6db24f3ca057104"
             ],
             [
-                "d5ca13e2b9f46103"
+                "c4b9e2d1a8f3500c"
             ]
         ]
     },
@@ -826,6 +826,26 @@
         "wires": [
             [
                 "e6db24f3ca057104"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f3500c",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Projeter santé Modbus",
+        "func": "const states = flow.get('fleetWatchdogState') || {};\nconst heartbeats = flow.get('fleetHeartbeats') || {};\nconst cfg = flow.get('fleetAdminConfig') || {};\nconst graceMinutes = Number(cfg.offlineGraceMinutes) >= 1 ? Number(cfg.offlineGraceMinutes) : 5;\nconst fleetStartedAt = Number(flow.get('fleetStartedAt') || 0);\nconst inGrace = fleetStartedAt > 0 && Date.now() - fleetStartedAt < graceMinutes * 60000;\nlet changed = false;\nObject.keys(states).forEach(function (uuid) {\n    const heartbeat = heartbeats[uuid] || {};\n    const health = heartbeat.health || {};\n    const modbus = health.modbus;\n    if (inGrace || !modbus || typeof modbus.ok !== 'boolean' || modbus.ok) return;\n    const entry = states[uuid];\n    if (!entry) return;\n    const lastError = modbus.lastError && modbus.lastError.message\n        ? String(modbus.lastError.message)\n        : 'Erreur Modbus détectée';\n    const detail = 'Modbus : ' + lastError.slice(0, 240);\n    if (entry.state !== 'dead' || entry.severity !== 'critical' || entry.detail !== detail) {\n        entry.state = 'dead';\n        entry.severity = 'critical';\n        entry.detail = detail;\n        changed = true;\n    }\n});\nif (changed) flow.set('fleetWatchdogState', states);\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1060,
+        "y": 220,
+        "wires": [
+            [
+                "d5ca13e2b9f46103"
             ]
         ]
     }

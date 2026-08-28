@@ -19,6 +19,16 @@
             flowSummary: { type: Object, default: function () { return {}; } },
             fleetSummary: { type: Object, default: function () { return {}; } }
         },
+        data: function () {
+            return { lightTheme: false };
+        },
+        mounted: function () {
+            var savedTheme = global.localStorage && global.localStorage.getItem('watchdog-theme');
+            if (savedTheme === 'light') {
+                this.lightTheme = true;
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        },
         computed: {
             balenaState: function () {
                 return this.sourceStatus.balena && this.sourceStatus.balena.ok ? 'ok' : 'dead';
@@ -47,6 +57,12 @@
         },
         methods: {
             formatDateTime: formatters.formatDateTime,
+            toggleTheme: function () {
+                this.lightTheme = !this.lightTheme;
+                var theme = this.lightTheme ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', theme);
+                if (global.localStorage) global.localStorage.setItem('watchdog-theme', theme);
+            },
             formatRelative: function (value) {
                 return formatters.formatRelative(value, this.now);
             },
@@ -68,6 +84,7 @@
                         '<span class="system-summary">{{ fleetSummary.alerts || 0 }} alertes flotte</span>' +
                         '<span class="system-summary" :title="formatDateTime(generatedAt)">Snapshot {{ formatRelative(generatedAt) }}</span>' +
                         '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'LIVE\' : \'OFFLINE\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
+                        '<button class="header-theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Activer le thème sombre\' : \'Activer le thème clair\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair\' : \'Thème sombre\' }}</button>' +
                         '<button class="header-command" type="button" @click="$emit(\'open-command\')">Commandes <kbd>Ctrl K</kbd></button>' +
                     '</div>' +
                 '</div>' +

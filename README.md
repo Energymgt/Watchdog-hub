@@ -1,10 +1,12 @@
-# Watchdog Hub — déploiement siège
+# Watchdog Hub - déploiement siège
 
-Dashboard de supervision centralisée des gateways BACnet. Node-RED conserve les
-règles d'état et les transitions Teams ; l'interface UIbuilder est en lecture seule.
+Dashboard de supervision centralisée des gateways BACnet et Modbus. Node-RED
+conserve les règles d'état et les transitions Teams ; l'interface UIbuilder
+est en lecture seule.
 
 > **Projet gateway edge :** [README.md](../README.md) à la racine du dépôt.
 > **Contrat MQTT :** [INTEGRATION.md](INTEGRATION.md)
+> **Nouveaux producteurs :** [kit d'intégration versionné](integration-kit/README.md)
 
 ## Structure
 
@@ -12,16 +14,23 @@ règles d'état et les transitions Teams ; l'interface UIbuilder est en lecture 
 watchdog-hub/
 ├── flows/
 │   └── 04_Watchdog_Hub.json    # Flow Node-RED fleet
+├── contracts/                    # Contrats MQTT et HTTP
+├── integration-kit/              # Kit BACnet, Modbus et HTTP
 ├── uibuilder/watchdog-hub/src/ # UI Vue 3 (lecture seule)
 ├── Dockerfile                    # Image GHCR
 ├── docker-compose.yml            # Stack Portainer/Swarm
 ├── settings.js                   # Config Node-RED
 ├── start.sh                      # Entrypoint (init flows + UI)
 ├── publish.ps1                   # Build + push GHCR
-├── tests/watchdog.*.v1.test.js   # Contrats ingest (npm test)
+├── tests/watchdog.*.v1.test.js   # Contrats et runtime (npm test)
 ├── INTEGRATION.md                # Contrat MQTT gateway ↔ fleet
 └── .env.example                  # Variables Portainer
 ```
+
+Le kit est versionné par `integration-kit/VERSION`. Une version publiée est
+associée au tag immuable correspondant du dépôt Watchdog Hub. Les nouveaux
+projets doivent partir des templates du kit et réussir ses tests de conformité
+avant activation en production.
 
 ## Construire et publier (GHCR → Portainer)
 

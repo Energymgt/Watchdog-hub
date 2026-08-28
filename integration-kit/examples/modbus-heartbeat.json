@@ -1,0 +1,47 @@
+{
+  "schema": "watchdog.heartbeat.v1",
+  "ts": 1787904000000,
+  "device": {
+    "uuid": "def456abc123",
+    "name": "Gateway Modbus Exemple",
+    "app": "gateway-modbus",
+    "host": "gateway-example",
+    "protocol": "modbus"
+  },
+  "health": {
+    "ok": true,
+    "protocol": "modbus",
+    "nodeRed": {
+      "ok": true,
+      "uptimeSec": 3600
+    },
+    "modbus": {
+      "ok": true,
+      "lastSuccessAt": 1787903995000,
+      "lastSuccessAgeSec": 5,
+      "staleAfterSec": 120,
+      "lastError": null,
+      "recentError": false,
+      "queue": {
+        "state": "ok",
+        "pending": 0
+      }
+    }
+  },
+  "mqtt": {
+    "ok": true,
+    "connected": true,
+    "status": "connected",
+    "updatedAt": 1787903999000
+  },
+  "buffer": {
+    "state": "ok",
+    "pending": 0,
+    "warnAt": 1000000,
+    "criticalAt": 2000000,
+    "lastError": null,
+    "source": "store-and-forward"
+  },
+  "snapshot": null,
+  "supervisor": null
+}

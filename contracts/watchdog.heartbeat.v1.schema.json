@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://watchdog-hub.local/contracts/watchdog.heartbeat.v1.json",
+  "title": "watchdog.heartbeat.v1",
+  "description": "État technique périodique d'une gateway edge publié vers Watchdog Hub par MQTT.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ts", "device", "health", "mqtt", "buffer"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "watchdog.heartbeat.v1"
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Timestamp Unix UTC en millisecondes."
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uuid", "name"],
+      "properties": {
+        "uuid": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "app": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "host": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "protocol": {
+          "type": "string",
+          "enum": ["bacnet", "modbus"]
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "protocol": {
+          "type": "string",
+          "enum": ["bacnet", "modbus"]
+        },
+        "status": { "type": ["string", "null"] },
+        "bacnet_initialized": { "type": ["boolean", "null"] },
+        "httpStatus": { "type": ["integer", "null"] },
+        "nodeRed": { "type": ["object", "null"] },
+        "modbus": { "type": ["object", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "mqtt": {
+      "type": "object",
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "connected": { "type": "boolean" },
+        "status": { "type": ["string", "null"] },
+        "updatedAt": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "buffer": {
+      "type": "object",
+      "required": ["state", "pending"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["ok", "warning", "critical", "unknown"]
+        },
+        "pending": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Nombre en attente, ou null lorsque le compteur est indisponible."
+        },
+        "warnAt": { "type": ["integer", "null"], "minimum": 0 },
+        "criticalAt": { "type": ["integer", "null"], "minimum": 0 },
+        "lastError": { "type": ["string", "null"] },
+        "detail": { "type": ["string", "null"] },
+        "source": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "snapshot": {
+      "type": ["object", "null"]
+    },
+    "supervisor": {
+      "type": ["object", "null"]
+    },
+    "grace": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "device": {
+            "properties": {
+              "protocol": { "const": "modbus" }
+            },
+            "required": ["protocol"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "health": {
+            "required": ["protocol", "modbus"],
+            "properties": {
+              "protocol": { "const": "modbus" },
+              "modbus": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "018f5f4e-7b8a-4e63-9c12-8af4bf91d7c2",
+  "flow_id": "EXAMPLE_01",
+  "event_type": "execution_completed",
+  "status": "success",
+  "timestamp": "2026-08-28T08:00:00Z",
+  "source_id": "SRC_EXAMPLE",
+  "connector_id": "CONN_EXAMPLE",
+  "destination_id": "DST_EXAMPLE",
+  "execution_id": "run-20260828-080000",
+  "duration_ms": 1520,
+  "records": 42,
+  "metadata": {
+    "environment": "integration"
+  }
+}

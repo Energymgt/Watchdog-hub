@@ -36,6 +36,8 @@ describe('Fleet Command Center', () => {
         assert.match(filters, /Service terrain/);
         assert.match(detail, /Dernière lecture Modbus/);
         assert.match(detail, /Erreur Modbus récente/);
+        assert.match(detail, /File Modbus/);
+        assert.match(detail, /Store and Forward/);
         assert.match(detail, /Node-RED/);
         assert.match(detail, /device\.mqtt\.status/);
         assert.match(detail, /device\.buffer\.detail/);
@@ -58,5 +60,17 @@ describe('Fleet Command Center', () => {
         const detail = read('components/fleet/device-detail.js');
         assert.doesNotMatch(app, /gateway.*flow|device.*incident|device.*anomal/i);
         assert.doesNotMatch(detail, /flows liés|incidents liés|anomalies liées/i);
+    });
+
+    it('propose une bascule de thème accessible et locale', () => {
+        const header = read('components/fleet/fleet-header.js');
+        const css = read('index.css');
+
+        assert.match(header, /header-theme-toggle/);
+        assert.match(header, /aria-pressed/);
+        assert.match(header, /localStorage/);
+        assert.match(header, /data-theme/);
+        assert.match(css, /:root\[data-theme="light"\]/);
+        assert.match(css, /\.header-theme-toggle/);
     });
 });
