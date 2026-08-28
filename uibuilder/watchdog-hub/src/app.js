@@ -617,7 +617,7 @@
                         '<section class="fleet-command-center" aria-labelledby="fleet-command-title">' +
                         '<div class="workspace-heading"><p class="eyebrow">Supervision infrastructure</p><h2 id="fleet-command-title">Fleet Command Center</h2><p>État des appareils, connectivité et activité récente à partir du snapshot courant.</p></div>' +
                         '<fleet-kpis :summary="state.summary" :loading="state.refreshing" @filter-status="setFleetStatus"></fleet-kpis>' +
-                        '<fleet-activity :transitions="state.recentTransitions" :pending="state.pendingConfirmations" :now="now"></fleet-activity>' +
+                        '<div class="fleet-devices-heading"><h2>Appareils à surveiller</h2><p>Les appareils nécessitant une attention apparaissent en premier selon leur état courant.</p></div>' +
                         '<filter-bar :query="state.query" :status="state.statusFilter" :source="state.sourceFilter" :sort="state.sortBy" :refreshing="state.refreshing" results-id="fleet-device-results" @update:query="state.query = $event" @update:status="state.statusFilter = $event" @update:source="state.sourceFilter = $event" @update:sort="state.sortBy = $event" @refresh="refresh" @reset="resetFilters"></filter-bar>' +
                         '<p class="results-summary" aria-live="polite" aria-atomic="true">{{ filteredDevices.length }} appareil{{ filteredDevices.length > 1 ? \'s\' : \'\' }} affiché{{ filteredDevices.length > 1 ? \'s\' : \'\' }} sur {{ state.devices.length }}<span v-if="state.refreshing"> — Actualisation…</span></p>' +
                         '<div id="fleet-device-results">' +
@@ -626,6 +626,7 @@
                             '<state-panel v-else-if="state.devices.length" title="Aucun résultat" message="Aucun appareil ne correspond aux critères actuels." action-label="Réinitialiser les filtres" @retry="resetFilters"></state-panel>' +
                             '<state-panel v-else title="Flotte vide" message="Le snapshot ne contient aucun appareil. Utilisez Administration → Connecter un appareil." action-label="Ouvrir l’administration" @retry="setView(\'admin\')"></state-panel>' +
                         '</div>' +
+                        '<fleet-activity :transitions="state.recentTransitions" :pending="state.pendingConfirmations" :now="now"></fleet-activity>' +
                         '</section>' +
                     '</template>' +
                     '<state-panel v-else-if="state.loading" kind="loading" title="Chargement de la flotte" message="Connexion au flux de supervision…" :busy="true"></state-panel>' +

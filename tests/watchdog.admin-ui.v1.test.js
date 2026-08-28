@@ -60,6 +60,22 @@ describe('Administration UI', () => {
         assert.match(sources, /tokenSet/);
     });
 
+    it('protège le statut Teams et met Fleet au premier plan', () => {
+        const admin = read('components/admin/admin-page.js');
+        const app = read('app.js');
+        const css = read('index.css');
+
+        assert.doesNotMatch(admin, /urlHint/);
+        assert.match(admin, /teamsStatusLabel/);
+        assert.match(admin, /'À configurer'/);
+        assert.match(admin, /'Erreur'/);
+        assert.match(admin, /'Connecté'/);
+        assert.match(app, /Appareils à surveiller/);
+        assert.ok(app.indexOf('Appareils à surveiller') < app.indexOf('<fleet-activity'));
+        assert.match(css, /\.dashboard[\s\S]*overflow-x: hidden/);
+        assert.match(css, /\.integration-card__head \.status-badge[\s\S]*text-overflow: ellipsis/);
+    });
+
     it('reste syntaxiquement valide sans dépendance nouvelle', () => {
         assert.doesNotThrow(() => new vm.Script(read('components/admin/admin-page.js')));
         assert.doesNotThrow(() => new vm.Script(read('components/admin/enroll-wizard.js')));

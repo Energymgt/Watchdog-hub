@@ -66,6 +66,10 @@
                 if (!this.teams.configured) return 'unknown';
                 return this.sourceStatus.teams && this.sourceStatus.teams.lastError ? 'heartbeat_missing' : 'ok';
             },
+            teamsStatusLabel: function () {
+                if (!this.teams.configured) return 'À configurer';
+                return this.sourceStatus.teams && this.sourceStatus.teams.lastError ? 'Erreur' : 'Connecté';
+            },
             mqttTone: function () {
                 return this.sourceStatus.mqtt && this.sourceStatus.mqtt.ok ? 'ok' : 'heartbeat_missing';
             },
@@ -174,7 +178,7 @@
                     '<article class="integration-card">' +
                         '<div class="integration-card__head">' +
                             '<h3>Microsoft Teams</h3>' +
-                            '<status-badge :state="teamsTone" :label="teams.configured ? (teams.urlHint || \'Connecté\') : \'À configurer\'"></status-badge>' +
+                            '<status-badge :state="teamsTone" :label="teamsStatusLabel"></status-badge>' +
                         '</div>' +
                         '<p>Webhook Workflows. Les alertes suivent toujours la règle anti-flap existante.</p>' +
                         '<ui-field label="URL webhook" extra-class="admin-field" :hint="teams.configured ? \'Laisser vide pour conserver l’URL actuelle.\' : \'URL HTTPS logic.azure.com\'">' +

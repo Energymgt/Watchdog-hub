@@ -118,6 +118,17 @@ h1 { margin: 0; font-size: clamp(1.35rem, 3vw, 2rem); line-height: 1.2; }
     color: var(--muted);
 }
 
+.fleet-devices-heading h2 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.fleet-devices-heading p {
+    margin: 0.2rem 0 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
 .connection-banner {
     margin-bottom: 1rem;
     padding: 0.75rem 1rem;
@@ -1128,11 +1139,30 @@ tbody tr:hover {
 }
 
 .integration-card {
+    min-width: 0;
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 0.45rem;
     background: var(--surface);
     box-shadow: var(--shadow);
+}
+
+.integration-card__head {
+    min-width: 0;
+}
+
+.integration-card__head h3 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.integration-card__head .status-badge {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .admin-field {
@@ -1888,6 +1918,10 @@ html, body {
     background: var(--bg);
 }
 
+body {
+    overflow-y: hidden;
+}
+
 .app-shell {
     display: grid;
     grid-template-columns: 210px minmax(0, 1fr);
@@ -1989,6 +2023,7 @@ html, body {
     justify-content: flex-start;
     gap: 1rem;
     width: 210px;
+    min-height: 0;
     margin: 0;
     padding: 0.85rem 0.7rem 1.25rem;
     overflow-x: hidden;
@@ -2058,8 +2093,10 @@ html, body {
 
 .dashboard {
     min-width: 0;
+    min-height: 0;
     padding: 1rem 1.15rem 1.75rem;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .overview-page {
@@ -2803,6 +2840,10 @@ button.activity-timeline__item:focus-visible strong {
 }
 
 @media (max-width: 700px) {
+    body {
+        overflow-y: auto;
+    }
+
     .app-shell {
         display: flex;
         flex-direction: column;
@@ -2933,4 +2974,53 @@ button.activity-timeline__item:focus-visible strong {
     .command-palette__list button {
         min-height: 3rem;
     }
+}
+
+.header-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.85rem;
+    padding: 0 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    background: var(--surface-muted);
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
+.header-theme-toggle:hover,
+.header-theme-toggle:focus-visible {
+    border-color: var(--primary);
+    color: var(--text);
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f3f6fa;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-muted: #eef2f6;
+    --text: #17202a;
+    --muted: #52606d;
+    --border: #c7d0da;
+    --border-strong: #8b99a6;
+    --primary: #075ea8;
+    --primary-hover: #064c87;
+    --ok: #08783e;
+    --ok-bg: #e6f5ec;
+    --warning: #815b00;
+    --warning-bg: #fff3cd;
+    --high: #a33a00;
+    --high-bg: #ffeadf;
+    --critical: #b42318;
+    --critical-bg: #fee4e2;
+    --unknown: #536170;
+    --unknown-bg: #edf0f3;
+    --focus: #005fcc;
+    --shadow: 0 8px 24px rgba(23, 32, 42, 0.08);
+}
+
+:root[data-theme="light"] .app-nav {
+    background: #ffffff;
 }
