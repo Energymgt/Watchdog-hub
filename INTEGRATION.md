@@ -1,6 +1,9 @@
-# Contrat d'intégration — Gateway ↔ Watchdog Hub
+# Contrat d'intégration - Gateway vers Watchdog Hub
 
 Ce document décrit le lien entre la gateway edge et le dashboard fleet siège.
+Pour tout nouveau développement BACnet, Modbus ou HTTP, utiliser le kit
+versionné [`integration-kit/`](integration-kit/README.md). Il contient les
+templates Node-RED, exemples, variables et tests de recette.
 
 ## Principe
 
@@ -15,8 +18,11 @@ bacnet/gateway/{device_uuid}/heartbeat
 ```
 
 - `{device_uuid}` : UUID Balena du device (`BALENA_DEVICE_UUID` ou équivalent supervisor).
-- QoS : 1 (recommandé).
+- QoS : 1 (obligatoire pour les nouvelles intégrations).
 - Retain : `true` (le fleet lit le dernier état connu au démarrage).
+
+Le préfixe `bacnet/gateway/` est conservé pour les gateways Modbus afin de
+rester compatible avec l'abonnement actuel du flow 04.
 
 ## Payload heartbeat (gateway → fleet)
 
@@ -24,10 +30,12 @@ Structure émise par le flow `03_Watchdog.json` :
 
 ```json
 {
+  "schema": "watchdog.heartbeat.v1",
   "ts": 1710000000000,
   "device": {
     "uuid": "abc123...",
-    "name": "Gateway Site A"
+    "name": "Gateway Site A",
+    "protocol": "bacnet"
   },
   "health": { "ok": true },
   "mqtt": { "ok": true, "connected": true },
@@ -45,6 +53,16 @@ Structure émise par le flow `03_Watchdog.json` :
 | `buffer` | État store-and-forward (flow 02) |
 | `snapshot` | Compteurs devices/objects |
 | `supervisor` | Services Balena défaillants |
+
+Le contrat formel est
+[`contracts/watchdog.heartbeat.v1.schema.json`](contracts/watchdog.heartbeat.v1.schema.json).
+Le champ `schema` est recommandé pour les nouveaux producteurs mais reste
+optionnel afin d'accepter les gateways historiques.
+
+Pour BACnet, `device.protocol` vaut `bacnet`. Pour Modbus,
+`device.protocol` et `health.protocol` valent `modbus`, et `health.modbus`
+décrit au minimum l'état des lectures terrain. L'UUID du topic et
+`device.uuid` doivent être identiques.
 
 ## États fleet (flow 04)
 
@@ -118,7 +136,10 @@ dédupliqués par UUID. Une erreur sur une fleet n'annule pas les résultats des
 npm test
 ```
 
-Fichiers : `tests/watchdog.*.v1.test.js` (contrat `watchdog.event.v1`, ingest HTTP, anomalies, incidents, actions, résolutions). Il n'existe pas de `tests/contract.test.js`.
+Fichiers : `tests/watchdog.*.v1.test.js` (contrats
+`watchdog.heartbeat.v1` et `watchdog.event.v1`, kit d'intégration, ingest
+HTTP, anomalies, incidents, actions, résolutions). Il n'existe pas de
+`tests/contract.test.js`.
 
 ## Ingest HTTP (producteurs CSV / Météo)
 

@@ -1,0 +1,28 @@
+{
+  "flow_id": "EXAMPLE_01",
+  "version": 1,
+  "name": "Flux exemple à remplacer",
+  "source_id": "SRC_EXAMPLE",
+  "connector_id": "CONN_EXAMPLE",
+  "destination_id": "DST_EXAMPLE",
+  "health_contract": {
+    "clauses": [
+      {
+        "id": "availability",
+        "kind": "event_failure",
+        "event_types": [
+          "connector_error",
+          "timeout",
+          "destination_error",
+          "execution_failed",
+          "validation_failed"
+        ],
+        "success_types": [
+          "data_received",
+          "execution_completed"
+        ],
+        "note": "Remplacer par le comportement technique validé du flux."
+      }
+    ]
+  }
+}
