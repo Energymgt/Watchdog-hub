@@ -22,8 +22,21 @@ function correlationKey(flowId, clauseId, errorSignature) {
     return `${flowId}|${clauseId}|${errorSignature || 'none'}`;
 }
 
+function statusesThatOpen(rule) {
+    const declared = Array.isArray(rule.open_statuses) ? rule.open_statuses : ['failure'];
+    return declared.filter((status) => status && status !== 'success');
+}
+
+function signatureForOpen(rule, event) {
+    if (typeof rule.error_signature === 'string' && rule.error_signature) {
+        return rule.error_signature;
+    }
+    return event.error_signature || 'execution:failed';
+}
+
 /**
  * Applique un événement nouvellement inséré aux clauses event_failure.
+ * L'ouverture suit open_statuses (défaut failure). Le succès ferme la clause.
  * Ne crée pas d'incident. N'évalue pas de fraîcheur temporelle.
  * @returns {{ opened: number, incremented: number, closed: number, incrementedRows: Object[], closedRows: Object[] }}
  */
@@ -43,7 +56,7 @@ function applyEventToAnomalies(registry, event, contracts) {
     const at = nowUtc();
 
     for (const rule of matching) {
-        const isFailure = event.status === 'failure'
+        const isFailure = statusesThatOpen(rule).includes(event.status)
             && Array.isArray(rule.event_types)
             && rule.event_types.includes(event.event_type);
         const isSuccess = event.status === 'success'
@@ -51,7 +64,7 @@ function applyEventToAnomalies(registry, event, contracts) {
             && rule.success_types.includes(event.event_type);
 
         if (isFailure) {
-            const signature = event.error_signature || 'execution:failed';
+            const signature = signatureForOpen(rule, event);
             const open = registry.findOpenAnomaly(event.flow_id, rule.clause_id, signature);
             if (open) {
                 const previousEventId = open.last_event_id;

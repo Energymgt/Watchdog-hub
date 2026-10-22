@@ -150,3 +150,46 @@ Les stacks CSV et Météo sont séparées du siège. Pour viser Watchdog sans ac
 - Flags d'émission : CSV `watchdog.enabled` et Météo `WATCHDOG_ENABLED` restent **OFF** tant que l'activation n'est pas explicite
 
 `GET /healthz` n'exige pas de token. `/v1/*` l'exige dès que le secret siège est non vide.
+
+## Producteur dju-daily (`METEO_STAT_DAILY`)
+
+Flux distinct de `METEO_01`. Il décrit le worker quotidien de `dju-autonome`, qui calcule et écrit les statistiques de Genève. Watchdog n'est pas la base de ces statistiques.
+
+| Identifiant | Valeur |
+| --- | --- |
+| `flow_id` | `METEO_STAT_DAILY` |
+| `producer` | `dju-daily` |
+| `source_id` | `SRC_SQLSERVER_METEO` |
+| `connector_id` | `CONN_DJU_DAILY` |
+| `destination_id` | `DST_SQL_GENEVE_METEO_STAT` |
+
+Contrat inchangé : `watchdog.event.v1`. Un événement terminal par passage qui a réellement traité des journées closes. Le corps ne contient ni ligne de `dbo.Geneve_Meteo_STAT`, ni mesure, ni secret.
+
+| Situation | `event_type` | `status` |
+| --- | --- | --- |
+| Écriture relue ou valeurs déjà confirmées en base | `execution_completed` | `success` |
+| Source incomplète, écriture refusée par le worker | `data_missing` | `partial` |
+| Lecture source, écriture, relecture ou validation en échec | `connector_error`, `destination_error`, `validation_failed` ou `execution_failed` | `failure` |
+
+Deux clauses `event_failure`, dérivées du contrat, sans copie indépendante :
+
+| Clause | Ouverture | Signature | Fermeture |
+| --- | --- | --- | --- |
+| `availability` | `connector_error`, `destination_error`, `execution_failed`, `validation_failed` avec `status: failure` | signature de l'événement | `execution_completed` / `success` |
+| `source_completeness` | `data_missing` avec `status: partial` | `source_data_incomplete`, déclarée sur la clause | `execution_completed` / `success` |
+
+`data_missing` reste un écart de données. Il n'est pas réécrit en `execution_failed`. La signature ne contient ni date ni message SQL. Les répétitions du même écart incrémentent la même anomalie. Les événements d'origine restent dans le registre.
+
+Le worker n'envoie pas la liste des journées. `business_date` n'est présent que lorsqu'une seule journée du passage est incomplète, et `incomplete_days` est un compte. Watchdog ne reconstitue pas les journées absentes du payload.
+
+`execution_completed` / `success` ferme cette anomalie. Le worker ne produit ce succès que lorsque toutes les journées closes du passage sont confirmées, par écriture relue ou par valeurs déjà présentes. Une panne technique ne ferme pas l'anomalie de données. Une semaine ou un mois encore ouvert (`period-open`) n'empêche pas ce succès et ne concerne pas cette clause.
+
+Il n'y a pas de règle de fraîcheur ni d'heure obligatoire. `METEO_01` et `CSV_OASSIS_01` ne déclarent pas `open_statuses` : leur défaut reste `failure`, et leur `data_missing` n'ouvre rien. Le second fait similaire peut ouvrir un incident `DETECTE` par le moteur déjà en place. Ce `DETECTE` passe à `CLOS` sur le succès du flux. Les états suivants restent manuels.
+
+Côté producteur, le défaut est `WATCHDOG_ENABLED=false`. Pour l'activer après le déploiement de ce contrat :
+
+- `WATCHDOG_URL=http://<watchdog-host>:8091/v1/events`
+- `WATCHDOG_TOKEN`, identique à `WATCHDOG_INGEST_TOKEN`, transmis dans `X-Watchdog-Token`
+- `WATCHDOG_TIMEOUT_MS` optionnel, défaut 3000, borné de 200 à 10000
+
+Le drapeau désactivé ne change pas le calcul ni l'écriture. Un Hub injoignable ne change pas le résultat SQL. Watchdog ne relance pas le worker et n'écrit pas dans les tables métier.

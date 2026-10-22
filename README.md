@@ -170,6 +170,7 @@ Lot 1 — ingest HTTP + registre SQLite (`runtime/`, aucun impact Fleet BACnet).
 Lot 2 — adaptateur CSV `CSV_OASSIS_01` (flag `watchdog.enabled` **OFF** par défaut dans CSV to SQL).  
 Lot 2.1 — échecs SQL destination (`destination_error` / `timeout`) via Catch Node-RED, sans supervision métier.  
 Lot 3 — adaptateur API Météo `METEO_01` (flag `WATCHDOG_ENABLED` **OFF** par défaut).  
+Producteur `dju-daily` — flux `METEO_STAT_DAILY`, distinct de `METEO_01` (flag `WATCHDOG_ENABLED` **OFF** par défaut dans `dju-autonome`).  
 Lot 4 — contrats de santé déclaratifs + anomalies `event_failure` (`GET /v1/anomalies`, `GET /v1/flows`).  
 Lot 5 — incidents corrélés (`GET /v1/incidents`, `PATCH /v1/incidents/:id`), historique d’état obligatoire.  
 Lot 6 — actions enregistrées (`POST /v1/incidents/:id/actions`). Pas d’orchestration, pas d’UI Flux.  

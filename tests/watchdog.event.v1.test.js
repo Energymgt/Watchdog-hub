@@ -103,6 +103,31 @@ describe('règles métier du contrat', () => {
         assert.ok(result.errors.some((e) => e.startsWith('metadata:')));
     });
 
+    it('accepte dju-daily et rejette un producteur inconnu', () => {
+        assert.deepEqual([...schema.properties.producer.enum].sort(), [
+            'api-meteo',
+            'bacnet-gateway',
+            'csv-to-sql',
+            'dju-daily',
+            'watchdog-internal'
+        ]);
+        const accepted = validateWatchdogEvent({
+            ...base,
+            flow_id: 'METEO_STAT_DAILY',
+            event_type: 'execution_completed',
+            status: 'success',
+            source_id: 'SRC_SQLSERVER_METEO',
+            connector_id: 'CONN_DJU_DAILY',
+            destination_id: 'DST_SQL_GENEVE_METEO_STAT',
+            execution_id: 'dju-daily:test',
+            producer: 'dju-daily'
+        }, schema);
+        assert.equal(accepted.ok, true, accepted.errors.join('; '));
+        const rejected = validateWatchdogEvent({ ...base, producer: 'not-a-producer' }, schema);
+        assert.equal(rejected.ok, false);
+        assert.ok(rejected.errors.some((entry) => entry.startsWith('producer:')));
+    });
+
     it('ne confond pas un event et une ligne métier', () => {
         const result = validateWatchdogEvent({
             ...base,

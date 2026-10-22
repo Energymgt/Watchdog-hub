@@ -82,9 +82,10 @@ function requestJson(port, method, urlPath, body) {
 describe('contrats de santé Lot 4', () => {
     it('charge METEO_01 et CSV_OASSIS_01', () => {
         const { flows, rules } = loadHealthContracts();
-        assert.equal(flows.length, 2);
+        assert.equal(flows.length, 3);
         assert.ok(flows.some((f) => f.flow_id === 'METEO_01'));
         assert.ok(flows.some((f) => f.flow_id === 'CSV_OASSIS_01'));
+        assert.ok(flows.some((f) => f.flow_id === 'METEO_STAT_DAILY'));
         assert.ok(rules.every((r) => r.source === 'health_contract'));
         assert.ok(rules.every((r) => r.kind === 'event_failure'));
         assert.ok(!JSON.stringify(flows).includes('"kind": "freshness"'));
@@ -99,6 +100,26 @@ describe('contrats de santé Lot 4', () => {
         assert.ok(meteo.event_types.includes('timeout'));
         assert.ok(meteo.success_types.includes('data_received'));
         assert.ok(!meteo.event_types.includes('data_missing'));
+        const daily = rules.find((r) => r.flow_id === 'METEO_STAT_DAILY' && r.clause_id === 'availability');
+        assert.equal(daily.rule_id, 'METEO_STAT_DAILY:availability:v1');
+        assert.equal(daily.source, 'health_contract');
+        assert.deepEqual(daily.open_statuses, ['failure']);
+        assert.equal(daily.error_signature, undefined);
+        assert.ok(daily.event_types.includes('connector_error'));
+        assert.ok(daily.event_types.includes('destination_error'));
+        assert.ok(daily.event_types.includes('execution_failed'));
+        assert.ok(daily.event_types.includes('validation_failed'));
+        assert.deepEqual(daily.success_types, ['execution_completed']);
+        assert.ok(!daily.event_types.includes('data_missing'));
+        assert.ok(!JSON.stringify(daily).includes('freshness'));
+        const missing = rules.find((r) => r.rule_id === 'METEO_STAT_DAILY:source_completeness:v1');
+        assert.equal(missing.kind, 'event_failure');
+        assert.deepEqual(missing.event_types, ['data_missing']);
+        assert.deepEqual(missing.open_statuses, ['partial']);
+        assert.deepEqual(missing.success_types, ['execution_completed']);
+        assert.equal(missing.error_signature, 'source_data_incomplete');
+        assert.deepEqual(meteo.open_statuses, ['failure']);
+        assert.equal(meteo.error_signature, undefined);
     });
 });
 

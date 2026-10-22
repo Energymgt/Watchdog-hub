@@ -24,7 +24,7 @@ Composant technique qui récupère les données (API Météo, CSV to SQL, gatewa
 
 ### Flow (flux Watchdog)
 Objet **central** de supervision : une chaîne source → destination avec un contrat de santé.  
-Identifiant Watchdog (`METEO_01`, `CSV_OASSIS_01`), distinct d’un *flow* Node-RED et des IDs CSV (`src-oassis`, etc.).  
+Identifiant Watchdog (`METEO_01`, `CSV_OASSIS_01`, `METEO_STAT_DAILY`), distinct d’un *flow* Node-RED et des IDs CSV (`src-oassis`, etc.).  
 L’état (`ok` / `degraded` / `down` / `unknown`) est **calculé**, jamais saisi.
 
 ### Flow Treatment (traitement)
@@ -83,6 +83,7 @@ Seule voie vers `RESOLU`, uniquement depuis `EN_VALIDATION`. `CLOS` n’est pas 
 | `gateway.db` | Buffer / inventaire edge |
 | `auth.db` météo | Auth API Météo |
 | SQL METEO / PLUTO | Données métier |
+| `dbo.Geneve_Meteo_STAT` | Statistiques métier Genève. Watchdog n’en reçoit pas les lignes |
 | InfluxDB | Séries énergétiques |
 | Node-RED flow | Runtime, pas l’objet Flow Watchdog |
 
@@ -106,7 +107,8 @@ Seule voie vers `RESOLU`, uniquement depuis `EN_VALIDATION`. `CLOS` n’est pas 
 
 ```text
 CSV to SQL ──HTTP──┐
-API Météo ───HTTP──┼──→ POST /v1/events  (watchdog.event.v1)
+API Météo ───HTTP──┤
+dju-daily ───HTTP──┼──→ POST /v1/events  (watchdog.event.v1)
 autres ─────HTTP───┘
 ```
 
@@ -125,13 +127,21 @@ Le producteur `api-meteo` émet `watchdog.event.v1` pour **un seul** flux pilote
 Flag `WATCHDOG_ENABLED` **OFF** par défaut. Fire-and-forget. Un événement par cycle (10 stations), jamais par mesure.  
 Ne remplace pas `T_METEO_ALERTS` (alerte métier gel/canicule). Ne décide pas le seuil de fraîcheur 20/30 min.
 
+## Adaptateur dju-daily
+
+Le producteur `dju-daily` émet `watchdog.event.v1` pour le flux `METEO_STAT_DAILY`.  
+Il est distinct de `api-meteo` / `METEO_01` : la source est la table de mesures SQL (`SRC_SQLSERVER_METEO`), le connecteur est le worker quotidien (`CONN_DJU_DAILY`), la destination identifiée est `DST_SQL_GENEVE_METEO_STAT`.  
+Le flux est la chaîne supervisée. Le traitement reste le calcul du worker. L’événement est un fait technique, pas une ligne de statistique.  
+Une anomalie naît d’une clause `event_failure`. Un incident reste une corrélation de plusieurs faits, produite par le moteur existant.  
+Flag `WATCHDOG_ENABLED` **OFF** par défaut. Un événement par passage utile, jamais par mesure. Une source incomplète émet `data_missing` / `partial`. La clause `source_completeness` en fait une anomalie de données, signature `source_data_incomplete`, distincte d’une panne `availability`. Le payload ne liste pas les journées. L’anomalie reste ouverte jusqu’à un `execution_completed` / `success`, émis seulement quand toutes les journées closes du passage sont confirmées.
+
 ## Anomalies (Lot 4)
 
 Les contrats de santé déclaratifs vivent dans `contracts/flows/*.json`.  
 Les `supervision_rules` sont une **projection versionnée**, jamais une seconde copie éditable.  
-Clause unique du prototype : `kind: event_failure`.  
-Une anomalie s’ouvre sur `status=failure` d’un `event_type` de la clause, se ferme sur `status=success` du flux.  
-`partial` et `data_missing` ne créent pas d’anomalie. Aucune clause de fraîcheur (20/30 min non décidé). Aucun SLA « un fichier / heure ».
+Clause du prototype : `kind: event_failure`.  
+Une anomalie s’ouvre sur un statut déclaré par la clause (`open_statuses`, défaut `failure`) et un `event_type` de cette clause. Elle se ferme sur `status=success` d’un `success_type` de la même clause.  
+Sans `open_statuses`, `partial` et `data_missing` ne créent pas d’anomalie : `METEO_01` et `CSV_OASSIS_01` restent ainsi. `METEO_STAT_DAILY` déclare `source_completeness` pour `data_missing` / `partial`. Aucune clause de fraîcheur (20/30 min non décidé). Aucun SLA « un fichier / heure ».
 
 ## Incidents (Lot 5)
 

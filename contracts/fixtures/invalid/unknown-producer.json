@@ -1,0 +1,13 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "d4e5f6a7-b8c9-4def-a123-456789abcdef",
+  "flow_id": "METEO_STAT_DAILY",
+  "event_type": "execution_completed",
+  "status": "success",
+  "timestamp": "2026-10-23T02:31:00Z",
+  "source_id": "SRC_SQLSERVER_METEO",
+  "connector_id": "CONN_DJU_DAILY",
+  "destination_id": "DST_SQL_GENEVE_METEO_STAT",
+  "execution_id": "dju-daily:unknown-producer",
+  "producer": "not-a-producer"
+}

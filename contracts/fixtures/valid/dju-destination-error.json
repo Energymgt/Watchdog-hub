@@ -1,0 +1,20 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "d4e5f6a7-b8c9-4def-8012-456789abcdef",
+  "flow_id": "METEO_STAT_DAILY",
+  "event_type": "destination_error",
+  "status": "failure",
+  "timestamp": "2026-10-23T02:31:04Z",
+  "source_id": "SRC_SQLSERVER_METEO",
+  "connector_id": "CONN_DJU_DAILY",
+  "destination_id": "DST_SQL_GENEVE_METEO_STAT",
+  "execution_id": "dju-daily:2026-10-23:2026-10-23T02:30:04.000Z",
+  "duration_ms": 900,
+  "error_signature": "destination_write_failed",
+  "producer": "dju-daily",
+  "metadata": {
+    "step": "destination_write",
+    "code": "destination_write_failed",
+    "slot_date": "2026-10-23"
+  }
+}

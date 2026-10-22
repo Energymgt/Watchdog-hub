@@ -1,0 +1,20 @@
+{
+  "schema": "watchdog.event.v1",
+  "event_id": "d4e5f6a7-b8c9-4def-9123-456789abcdef",
+  "flow_id": "METEO_STAT_DAILY",
+  "event_type": "data_missing",
+  "status": "partial",
+  "timestamp": "2026-10-23T02:31:02.100Z",
+  "source_id": "SRC_SQLSERVER_METEO",
+  "connector_id": "CONN_DJU_DAILY",
+  "destination_id": "DST_SQL_GENEVE_METEO_STAT",
+  "execution_id": "dju-daily:2026-10-23:2026-10-23T02:30:02.000Z",
+  "producer": "dju-daily",
+  "metadata": {
+    "step": "source",
+    "code": "source_data_incomplete",
+    "slot_date": "2026-10-23",
+    "business_date": "2026-10-22",
+    "incomplete_days": 1
+  }
+}
