@@ -1,0 +1,24 @@
+<script type="text/html" data-template-name="fleet-transition-outbox">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Nom</label>
+        <input type="text" id="node-input-name" placeholder="File transitions flotte">
+    </div>
+</script>
+<script type="text/javascript">
+    RED.nodes.registerType('fleet-transition-outbox', {
+        category: 'network',
+        color: '#C0DEED',
+        defaults: {
+            name: { value: 'File transitions flotte' }
+        },
+        inputs: 1,
+        outputs: 0,
+        icon: 'db.svg',
+        label: function () {
+            return this.name || 'File transitions flotte';
+        },
+        labelStyle: function () {
+            return this.name ? 'node_label_italic' : '';
+        }
+    });
+</script>

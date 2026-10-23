@@ -11,7 +11,8 @@
             flows: { type: Number, default: 0 },
             anomalies: { type: Number, default: 0 },
             events: { type: Number, default: 0 },
-            fleetAlerts: { type: Number, default: 0 }
+            fleetAlerts: { type: Number, default: 0 },
+            alertCount: { type: Number, default: 0 }
         },
         template:
             '<nav class="app-nav" aria-label="Navigation principale">' +
@@ -20,6 +21,9 @@
                     '<button class="app-nav__item" type="button" :aria-current="view === \'overview\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'overview\')">Vue d’ensemble</button>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'flows\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'flows\')">Flux métier <span v-if="flows" class="app-nav__count">{{ flows }}</span></button>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'fleet\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'fleet\')">Appareils <span v-if="fleetAlerts" class="app-nav__count">{{ fleetAlerts }}</span></button>' +
+                '</div>' +
+                '<div class="app-nav__group">' +
+                    '<button class="app-nav__item" type="button" :aria-current="view === \'alerts\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'alerts\')">Alertes <span v-if="alertCount" class="app-nav__count">{{ alertCount }}</span></button>' +
                 '</div>' +
                 '<div class="app-nav__group">' +
                     '<p class="app-nav__label" id="app-nav-problems">Problèmes</p>' +

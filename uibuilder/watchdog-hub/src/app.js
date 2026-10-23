@@ -8,10 +8,12 @@
     var flowsStore = fleet.createFlowsStore(Vue);
     var anomaliesStore = fleet.createAnomaliesStore(Vue);
     var eventsStore = fleet.createEventsStore(Vue);
+    var alertsStore = fleet.createAlertsStore(Vue);
     var client;
     var flowsClient;
     var anomaliesClient;
     var eventsClient;
+    var alertsClient;
 
     var Root = {
         name: 'WatchdogHubApp',
@@ -45,7 +47,8 @@
                     flows: flowsStore.state.flows,
                     anomalies: anomaliesStore.state.anomalies,
                     events: eventsStore.state.events,
-                    devices: store.state.devices
+                    devices: store.state.devices,
+                    alerts: alertsStore.state.alerts
                 });
             });
 
@@ -120,6 +123,7 @@
                 if (view === 'overview' || view === 'flows' || view === 'incidents') loadFlows(false);
                 if (view === 'anomalies') loadAnomalies(false);
                 if (view === 'events') loadEvents(false);
+                if (view === 'alerts') loadAlerts(false);
                 if (view === 'overview') {
                     loadAnomalies(false);
                     loadEvents(false);
@@ -152,6 +156,7 @@
                 }
                 if (route.view === 'anomalies') loadAnomalies(false);
                 if (route.view === 'events') loadEvents(false);
+                if (route.view === 'alerts') loadAlerts(false);
                 if (route.view === 'overview') {
                     loadAnomalies(false);
                     loadEvents(false);
@@ -283,6 +288,44 @@
                 openEventFromFlow(event);
             }
 
+            var alertOpener = Vue.ref(null);
+
+            function loadAlerts(refreshing) {
+                if (alertsStore.state.loading || alertsStore.state.refreshing) return;
+                alertsStore.beginLoad(refreshing);
+                if (refreshing) liveMessage.value = 'Actualisation des alertes demandée.';
+                alertsClient.requestSnapshot();
+            }
+
+            function selectAlert(alert, opener) {
+                if (!alert) {
+                    alertsStore.selectAlert(null);
+                    return;
+                }
+                alertOpener.value = opener || null;
+                alertsStore.beginLoad(false);
+                alertsClient.requestDetail(alert.alert_id);
+            }
+
+            function acknowledgeAlert(actor) {
+                var selected = alertsStore.state.selected && alertsStore.state.selected.alert;
+                if (!selected) return;
+                alertsStore.beginMutation();
+                liveMessage.value = 'Enregistrement de l’accusé.';
+                alertsClient.acknowledge(selected.alert_id, actor);
+            }
+
+            function openAlertIncident(alert) {
+                if (alert && alert.incident_id) openIncident({ incident_id: alert.incident_id });
+            }
+
+            function openAlertDevice(alert) {
+                var uuid = alert && alert.source_id;
+                var found = store.state.devices.filter(function (row) { return row.uuid === uuid; })[0];
+                setView('fleet');
+                if (found) openDetail(found);
+            }
+
             function openCommandPalette() {
                 commandPaletteOpen.value = true;
             }
@@ -324,6 +367,14 @@
                         return candidate.uuid === item.id;
                     })[0];
                     if (device) openDetail(device);
+                    return;
+                }
+                if (view === 'alerts') {
+                    setView(view);
+                    var alertRow = alertsStore.state.alerts.filter(function (candidate) {
+                        return candidate.alert_id === item.id;
+                    })[0];
+                    if (alertRow) selectAlert(alertRow);
                 }
             }
 
@@ -359,6 +410,7 @@
                     }
                     if (store.state.view === 'anomalies') loadAnomalies(true);
                     if (store.state.view === 'events') loadEvents(true);
+                    if (store.state.view === 'alerts') loadAlerts(true);
                     if (store.state.view === 'overview') {
                         loadAnomalies(true);
                         loadEvents(true);
@@ -497,7 +549,20 @@
                         liveMessage.value = 'Détail de l’événement chargé.';
                     }
                 },
-                onEventsError: eventsStore.setError
+                onEventsError: eventsStore.setError,
+                onAlertsSnapshot: function (payload) {
+                    if (alertsStore.acceptSnapshot(payload)) {
+                        var openCount = Number(payload.summary && payload.summary.open) || 0;
+                        liveMessage.value = openCount + (openCount === 1 ? ' alerte ouverte.' : ' alertes ouvertes.');
+                    }
+                },
+                onAlertsDetail: function (payload) {
+                    if (alertsStore.acceptDetail(payload)) {
+                        liveMessage.value = 'Détail de l’alerte chargé.';
+                        loadAlerts(false);
+                    }
+                },
+                onAlertsError: alertsStore.setError
             });
             flowsClient = fleet.createFlowsUibuilderClient({
                 onError: flowsStore.setError
@@ -507,6 +572,9 @@
             });
             eventsClient = fleet.createEventsUibuilderClient({
                 onError: eventsStore.setError
+            });
+            alertsClient = fleet.createAlertsUibuilderClient({
+                onError: alertsStore.setError
             });
 
             Vue.onMounted(function () {
@@ -520,12 +588,15 @@
                 flowsClient.start();
                 anomaliesClient.start();
                 eventsClient.start();
+                alertsClient.start();
                 client.start();
+                loadAlerts(false);
                 if (initialRoute.view === 'overview' || initialRoute.view === 'flows' || initialRoute.view === 'incidents') {
                     loadFlows(false);
                 }
                 if (initialRoute.view === 'anomalies') loadAnomalies(false);
                 if (initialRoute.view === 'events') loadEvents(false);
+                if (initialRoute.view === 'alerts') loadAlerts(false);
                 if (initialRoute.view === 'overview') {
                     loadAnomalies(false);
                     loadEvents(false);
@@ -544,6 +615,7 @@
                 flowsState: flowsStore.state,
                 anomaliesState: anomaliesStore.state,
                 eventsState: eventsStore.state,
+                alertsState: alertsStore.state,
                 activity: activity,
                 commandPaletteItems: commandPaletteItems,
                 now: now,
@@ -554,6 +626,7 @@
                 commandPaletteOpen: commandPaletteOpen,
                 enrollOpener: enrollOpener,
                 incidentOpener: incidentOpener,
+                alertOpener: alertOpener,
                 selectedFlow: selectedFlow,
                 filteredDevices: filteredDevices,
                 pagedDevices: pagedDevices,
@@ -568,6 +641,11 @@
                 loadFlows: loadFlows,
                 loadAnomalies: loadAnomalies,
                 loadEvents: loadEvents,
+                loadAlerts: loadAlerts,
+                selectAlert: selectAlert,
+                acknowledgeAlert: acknowledgeAlert,
+                openAlertIncident: openAlertIncident,
+                openAlertDevice: openAlertDevice,
                 selectAnomaly: selectAnomaly,
                 selectAnomalyFlow: selectAnomalyFlow,
                 selectEvent: selectEvent,
@@ -602,7 +680,7 @@
         template:
             '<div class="app-shell">' +
                 '<fleet-header :fleet-name="fleetName" :generated-at="state.snapshot && state.snapshot.generatedAt" :last-evaluation-at="state.snapshot && state.snapshot.lastEvaluationAt" :next-poll-at="state.snapshot && state.snapshot.nextPollAt" :now="now" :stale="stale" :connected="state.connected === true" :source-status="state.sourceStatus" :inert="modalOpen ? true : undefined" @open-command="openCommandPalette"></fleet-header>' +
-                '<app-nav :view="state.view" :incidents="flowsState.summary.incidentsActive || 0" :flows="(flowsState.summary.degraded || 0) + (flowsState.summary.down || 0) + (flowsState.summary.unknown || 0)" :anomalies="anomaliesState.anomalies.filter(function (anomaly) { return anomaly.status === \'open\'; }).length" :events="eventsState.events.length" :fleet-alerts="state.summary.alerts || 0" :inert="modalOpen ? true : undefined" @update:view="setView"></app-nav>' +
+                '<app-nav :view="state.view" :incidents="flowsState.summary.incidentsActive || 0" :flows="(flowsState.summary.degraded || 0) + (flowsState.summary.down || 0) + (flowsState.summary.unknown || 0)" :anomalies="anomaliesState.anomalies.filter(function (anomaly) { return anomaly.status === \'open\'; }).length" :events="eventsState.events.length" :fleet-alerts="state.summary.alerts || 0" :alert-count="alertsState.summary.open || 0" :inert="modalOpen ? true : undefined" @update:view="setView"></app-nav>' +
                 '<main id="main-content" class="dashboard" tabindex="-1" :aria-busy="(state.view === \'overview\' || state.view === \'flows\' || state.view === \'incidents\') ? (flowsState.refreshing || flowsState.mutating ? \'true\' : \'false\') : (state.view === \'anomalies\' ? (anomaliesState.refreshing ? \'true\' : \'false\') : (state.view === \'events\' ? (eventsState.refreshing ? \'true\' : \'false\') : (state.refreshing || state.adminSaving ? \'true\' : \'false\')))" :inert="modalOpen ? true : undefined">' +
                     '<p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</p>' +
                     '<ui-banner v-if="state.connected === false" kind="warning">Connexion au serveur interrompue. Reconnexion automatique en cours…</ui-banner>' +
@@ -629,6 +707,11 @@
                     '</template>' +
                     '<template v-else-if="state.view === \'events\'">' +
                         '<events-page :state="eventsState" :flows="flowsState.flows" @refresh="loadEvents(true)" @retry="loadEvents(false)" @select-event="selectEvent" @select-flow="selectEventFlow"></events-page>' +
+                    '</template>' +
+                    '<template v-else-if="state.view === \'alerts\'">' +
+                        '<alerts-page :state="alertsState" :detail="alertsState.selected" :opener="alertOpener" @refresh="loadAlerts(true)" @retry="loadAlerts(false)" @select="selectAlert" @acknowledge="acknowledgeAlert"' +
+                        ' @open-incident="openAlertIncident"' +
+                        ' @open-device="openAlertDevice"></alerts-page>' +
                     '</template>' +
                     '<template v-else-if="state.snapshot">' +
                         '<section class="fleet-command-center" aria-labelledby="fleet-command-title">' +

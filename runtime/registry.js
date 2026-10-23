@@ -5,7 +5,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 const SCHEMA_SQL = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 7;
 
 function nowUtc() {
     return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -142,6 +142,96 @@ function openRegistry(dbPath) {
         'SELECT * FROM resolutions WHERE incident_id = ? ORDER BY validated_at ASC, resolution_id ASC'
     );
     const countResolutionsStmt = db.prepare('SELECT COUNT(*) AS n FROM resolutions');
+
+    const insertAlertStmt = db.prepare(`
+        INSERT INTO alerts (
+            alert_id, plan, source_kind, source_id, correlation_key, dedup_key,
+            status, severity, device_state, flow_id, incident_id, subject_name, detail,
+            opened_at, updated_at, acknowledged_at, acknowledged_by, closed_at, close_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const getAlertStmt = db.prepare('SELECT * FROM alerts WHERE alert_id = ?');
+    const findActiveAlertStmt = db.prepare(
+        "SELECT * FROM alerts WHERE dedup_key = ? AND status != 'closed' LIMIT 1"
+    );
+    const saveAlertStmt = db.prepare(`
+        UPDATE alerts SET
+            status = ?, severity = ?, device_state = ?, subject_name = ?, detail = ?,
+            updated_at = ?, acknowledged_at = ?, acknowledged_by = ?, closed_at = ?, close_reason = ?
+        WHERE alert_id = ?
+    `);
+    const listAlertsStmt = db.prepare(
+        'SELECT * FROM alerts ORDER BY updated_at DESC, alert_id DESC LIMIT ?'
+    );
+    const listAlertsByStatusStmt = db.prepare(
+        'SELECT * FROM alerts WHERE status = ? ORDER BY updated_at DESC, alert_id DESC LIMIT ?'
+    );
+    const listActiveAlertsStmt = db.prepare(
+        "SELECT * FROM alerts WHERE status != 'closed' ORDER BY updated_at DESC, alert_id DESC LIMIT ?"
+    );
+    const countAlertsByStatusStmt = db.prepare(
+        'SELECT status, COUNT(*) AS n FROM alerts GROUP BY status'
+    );
+    const insertAlertHistoryStmt = db.prepare(`
+        INSERT INTO alert_history (
+            history_id, alert_id, event_type, from_status, to_status, from_severity, to_severity,
+            device_state, actor, reason, at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const listAlertHistoryStmt = db.prepare(
+        'SELECT * FROM alert_history WHERE alert_id = ? ORDER BY at ASC, history_id ASC'
+    );
+    const insertDeliveryStmt = db.prepare(`
+        INSERT INTO alert_deliveries (
+            delivery_id, alert_id, history_id, channel, event_type, status, attempt,
+            http_status, error_kind, possible_duplicate, created_at, started_at, finished_at, next_attempt_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const listDueDeliveriesStmt = db.prepare(`
+        SELECT * FROM alert_deliveries
+        WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+        ORDER BY created_at ASC, delivery_id ASC
+        LIMIT ?
+    `);
+    const listSendingDeliveriesStmt = db.prepare(
+        "SELECT * FROM alert_deliveries WHERE status = 'sending' ORDER BY started_at ASC, delivery_id ASC"
+    );
+    const listDeliveriesStmt = db.prepare(
+        'SELECT * FROM alert_deliveries WHERE alert_id = ? ORDER BY created_at ASC, attempt ASC, delivery_id ASC'
+    );
+    const claimDeliveryStmt = db.prepare(`
+        UPDATE alert_deliveries
+        SET status = 'sending', started_at = ?
+        WHERE delivery_id = ? AND status = 'pending'
+    `);
+    const finishDeliveryStmt = db.prepare(`
+        UPDATE alert_deliveries
+        SET status = ?, http_status = ?, error_kind = ?, possible_duplicate = ?, finished_at = ?
+        WHERE delivery_id = ?
+    `);
+    const countPendingDeliveriesStmt = db.prepare(
+        "SELECT COUNT(*) AS n FROM alert_deliveries WHERE status = 'pending'"
+    );
+    const getAlertSignalStmt = db.prepare('SELECT * FROM alert_signals WHERE signal_id = ?');
+    const insertAlertSignalStmt = db.prepare(
+        'INSERT INTO alert_signals (signal_id, alert_id, outcome, received_at) VALUES (?, ?, ?, ?)'
+    );
+
+    function transaction(work) {
+        db.exec('BEGIN IMMEDIATE');
+        try {
+            const value = work();
+            db.exec('COMMIT');
+            return value;
+        } catch (err) {
+            try {
+                db.exec('ROLLBACK');
+            } catch {
+                /* transaction déjà annulée */
+            }
+            throw err;
+        }
+    }
 
     function insertEvent(event, payloadJson) {
         const ingestedAt = nowUtc();
@@ -347,6 +437,159 @@ function openRegistry(dbPath) {
         return listResolutionsStmt.all(incidentId);
     }
 
+    function insertAlert(row) {
+        insertAlertStmt.run(
+            row.alert_id,
+            row.plan,
+            row.source_kind,
+            row.source_id,
+            row.correlation_key ?? null,
+            row.dedup_key,
+            row.status,
+            row.severity,
+            row.device_state ?? null,
+            row.flow_id ?? null,
+            row.incident_id ?? null,
+            row.subject_name ?? null,
+            row.detail ?? null,
+            row.opened_at,
+            row.updated_at,
+            row.acknowledged_at ?? null,
+            row.acknowledged_by ?? null,
+            row.closed_at ?? null,
+            row.close_reason ?? null
+        );
+        return row;
+    }
+
+    function getAlert(alertId) {
+        return getAlertStmt.get(alertId) || null;
+    }
+
+    function findActiveAlert(dedupKey) {
+        return findActiveAlertStmt.get(dedupKey) || null;
+    }
+
+    function saveAlert(row) {
+        saveAlertStmt.run(
+            row.status,
+            row.severity,
+            row.device_state ?? null,
+            row.subject_name ?? null,
+            row.detail ?? null,
+            row.updated_at,
+            row.acknowledged_at ?? null,
+            row.acknowledged_by ?? null,
+            row.closed_at ?? null,
+            row.close_reason ?? null,
+            row.alert_id
+        );
+        return getAlert(row.alert_id);
+    }
+
+    function listAlerts(options = {}) {
+        const n = Number.isInteger(options.limit) ? options.limit : 20;
+        const capped = Math.min(Math.max(n, 1), 100);
+        if (options.status === 'active') return listActiveAlertsStmt.all(capped);
+        if (options.status === 'open' || options.status === 'acknowledged' || options.status === 'closed') {
+            return listAlertsByStatusStmt.all(options.status, capped);
+        }
+        return listAlertsStmt.all(capped);
+    }
+
+    function countAlerts() {
+        const counts = { open: 0, acknowledged: 0, closed: 0 };
+        for (const row of countAlertsByStatusStmt.all()) {
+            if (Object.prototype.hasOwnProperty.call(counts, row.status)) counts[row.status] = row.n;
+        }
+        return counts;
+    }
+
+    function insertAlertHistory(row) {
+        insertAlertHistoryStmt.run(
+            row.history_id,
+            row.alert_id,
+            row.event_type,
+            row.from_status ?? null,
+            row.to_status ?? null,
+            row.from_severity ?? null,
+            row.to_severity ?? null,
+            row.device_state ?? null,
+            row.actor ?? null,
+            row.reason ?? null,
+            row.at
+        );
+        return row;
+    }
+
+    function listAlertHistory(alertId) {
+        return listAlertHistoryStmt.all(alertId);
+    }
+
+    function insertAlertDelivery(row) {
+        insertDeliveryStmt.run(
+            row.delivery_id,
+            row.alert_id,
+            row.history_id ?? null,
+            row.channel,
+            row.event_type,
+            row.status,
+            row.attempt,
+            row.http_status ?? null,
+            row.error_kind ?? null,
+            row.possible_duplicate ? 1 : 0,
+            row.created_at,
+            row.started_at ?? null,
+            row.finished_at ?? null,
+            row.next_attempt_at ?? null
+        );
+        return row;
+    }
+
+    function listDueDeliveries(nowIso, limit) {
+        const n = Number.isInteger(limit) ? limit : 20;
+        const capped = Math.min(Math.max(n, 1), 50);
+        return listDueDeliveriesStmt.all(nowIso, capped);
+    }
+
+    function listSendingDeliveries() {
+        return listSendingDeliveriesStmt.all();
+    }
+
+    function listAlertDeliveries(alertId) {
+        return listDeliveriesStmt.all(alertId);
+    }
+
+    function claimAlertDelivery(deliveryId, startedAt) {
+        const result = claimDeliveryStmt.run(startedAt, deliveryId);
+        return result && result.changes === 1;
+    }
+
+    function finishAlertDelivery(deliveryId, patch) {
+        finishDeliveryStmt.run(
+            patch.status,
+            patch.http_status ?? null,
+            patch.error_kind ?? null,
+            patch.possible_duplicate ? 1 : 0,
+            patch.finished_at,
+            deliveryId
+        );
+    }
+
+    function countPendingDeliveries() {
+        const row = countPendingDeliveriesStmt.get();
+        return row ? row.n : 0;
+    }
+
+    function getAlertSignal(signalId) {
+        return getAlertSignalStmt.get(signalId) || null;
+    }
+
+    function insertAlertSignal(row) {
+        insertAlertSignalStmt.run(row.signal_id, row.alert_id ?? null, row.outcome, row.received_at);
+        return row;
+    }
+
     function health() {
         const events = countStmt.get();
         const anomalies = countAnomaliesStmt.get();
@@ -402,6 +645,24 @@ function openRegistry(dbPath) {
         listActiveIncidentsForFlow,
         insertResolution,
         listResolutions,
+        transaction,
+        insertAlert,
+        getAlert,
+        findActiveAlert,
+        saveAlert,
+        listAlerts,
+        countAlerts,
+        insertAlertHistory,
+        listAlertHistory,
+        insertAlertDelivery,
+        listDueDeliveries,
+        listSendingDeliveries,
+        listAlertDeliveries,
+        claimAlertDelivery,
+        finishAlertDelivery,
+        countPendingDeliveries,
+        getAlertSignal,
+        insertAlertSignal,
         health,
         close
     };

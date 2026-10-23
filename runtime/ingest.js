@@ -4,6 +4,7 @@ const { validateWatchdogEvent } = require('../contracts/validate-event-v1');
 const { loadHealthContracts } = require('./health-contracts');
 const { applyEventToAnomalies } = require('./anomalies');
 const { applyEventToIncidents } = require('./incidents');
+const { syncFlowAlerts } = require('./alerts');
 
 /**
  * Valide, persiste, puis évalue anomalies puis incidents sur un insert nouveau.
@@ -19,16 +20,25 @@ function ingestEvent(registry, schema, event, options = {}) {
     const result = registry.insertEvent(event, payloadJson);
 
     if (result.outcome === 'inserted') {
+        let anomalyResult = null;
         try {
             const contracts = options.contracts || loadHealthContracts();
-            const anomalyResult = applyEventToAnomalies(registry, event, contracts);
+            anomalyResult = applyEventToAnomalies(registry, event, contracts);
             try {
                 applyEventToIncidents(registry, event, anomalyResult);
             } catch {
                 /* l'incident ne bloque pas l'événement ni l'anomalie */
             }
         } catch {
+            anomalyResult = null;
             /* fire-and-forget : l'événement reste la source de vérité */
+        }
+        if (anomalyResult) {
+            try {
+                syncFlowAlerts(registry, anomalyResult);
+            } catch {
+                /* l'alerte ne bloque pas l'événement */
+            }
         }
         return {
             ok: true,

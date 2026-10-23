@@ -17,6 +17,9 @@ const UI_FILES = [
     'components/ui/ui-drawer.js',
     'components/flows/flow-detail.js',
     'components/flows/incident-list.js',
+    'store/alerts-store.js',
+    'services/alerts-uibuilder-client.js',
+    'components/alerts/alerts-page.js',
     'app.js'
 ];
 

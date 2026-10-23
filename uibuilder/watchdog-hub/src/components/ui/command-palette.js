@@ -23,6 +23,7 @@
                     { id: 'overview', label: 'Vue d’ensemble', hint: 'Navigation' },
                     { id: 'flows', label: 'Flux métier', hint: 'Navigation' },
                     { id: 'fleet', label: 'Appareils', hint: 'Navigation' },
+                    { id: 'alerts', label: 'Alertes', hint: 'Notification' },
                     { id: 'incidents', label: 'Incidents', hint: 'Problèmes' },
                     { id: 'anomalies', label: 'Anomalies', hint: 'Problèmes' },
                     { id: 'events', label: 'Événements', hint: 'Problèmes' },

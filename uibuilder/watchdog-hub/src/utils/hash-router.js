@@ -8,6 +8,7 @@
         anomalies: true,
         events: true,
         fleet: true,
+        alerts: true,
         admin: true
     };
 
