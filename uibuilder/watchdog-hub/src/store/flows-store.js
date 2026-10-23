@@ -14,8 +14,9 @@
             mutating: false,
             lastError: null,
             notice: null,
-            query: '',
-            statusFilter: 'all',
+            flowQuery: '',
+            flowStatusFilter: 'all',
+            incidentQuery: '',
             incidentStateFilter: 'active',
             selectedIncident: null
         });

@@ -30,7 +30,7 @@ describe('workspace UI Anomalies', () => {
         assert.match(client, /anomalies_detail/);
         assert.match(client, /anomalies_error/);
         assert.match(store, /selectedAnomaly/);
-        assert.match(page, /Anomalies Workspace/);
+        assert.match(page, /<h2>Anomalies<\/h2>/);
         assert.match(page, /error_signature/);
         assert.match(page, /occurrence_count/);
         assert.match(page, /select-flow/);
@@ -56,7 +56,30 @@ describe('workspace UI Anomalies', () => {
         assert.match(page, /flowFilter/);
         assert.match(page, /clauseFilter/);
         assert.match(page, /anomaly-detail--empty/);
+        assert.match(page, /state\.lastError/);
         assert.match(page, /Fermer le diagnostic/);
+        const app = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
+        const exposed = app.slice(app.lastIndexOf('return {'), app.indexOf('template:'));
+        assert.match(exposed, /selectAnomaly:/);
+        assert.match(exposed, /loadAnomalies:/);
+        assert.match(exposed, /selectAnomalyFlow:/);
         assert.match(page, /last_event_id/);
+    });
+
+    it('retrouve le flux lié sans dépendre du this du callback', () => {
+        const context = {
+            window: {
+                WatchdogHub: {
+                    formatters: { formatDateTime: function () { return ''; } }
+                }
+            }
+        };
+        vm.createContext(context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/anomalies/anomalies-page.js'), 'utf8'), context);
+        const selected = context.window.WatchdogHub.components.AnomaliesPage.computed.selectedFlow.call({
+            state: { selectedAnomaly: { anomaly_id: 'ANOM-1', flow_id: 'CSV_OASSIS_01' } },
+            flows: [{ flow_id: 'CSV_OASSIS_01', name: 'CSV' }]
+        });
+        assert.equal(selected.name, 'CSV');
     });
 });

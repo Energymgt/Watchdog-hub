@@ -1,6 +1,9 @@
-# Contrat d'intégration — Gateway ↔ Watchdog Hub
+# Contrat d'intégration - Gateway vers Watchdog Hub
 
 Ce document décrit le lien entre la gateway edge et le dashboard fleet siège.
+Pour tout nouveau développement BACnet, Modbus ou HTTP, utiliser le kit
+versionné [`integration-kit/`](integration-kit/README.md). Il contient les
+templates Node-RED, exemples, variables et tests de recette.
 
 ## Principe
 
@@ -15,8 +18,11 @@ bacnet/gateway/{device_uuid}/heartbeat
 ```
 
 - `{device_uuid}` : UUID Balena du device (`BALENA_DEVICE_UUID` ou équivalent supervisor).
-- QoS : 1 (recommandé).
+- QoS : 1 (obligatoire pour les nouvelles intégrations).
 - Retain : `true` (le fleet lit le dernier état connu au démarrage).
+
+Le préfixe `bacnet/gateway/` est conservé pour les gateways Modbus afin de
+rester compatible avec l'abonnement actuel du flow 04.
 
 ## Payload heartbeat (gateway → fleet)
 
@@ -24,10 +30,12 @@ Structure émise par le flow `03_Watchdog.json` :
 
 ```json
 {
+  "schema": "watchdog.heartbeat.v1",
   "ts": 1710000000000,
   "device": {
     "uuid": "abc123...",
-    "name": "Gateway Site A"
+    "name": "Gateway Site A",
+    "protocol": "bacnet"
   },
   "health": { "ok": true },
   "mqtt": { "ok": true, "connected": true },
@@ -45,6 +53,16 @@ Structure émise par le flow `03_Watchdog.json` :
 | `buffer` | État store-and-forward (flow 02) |
 | `snapshot` | Compteurs devices/objects |
 | `supervisor` | Services Balena défaillants |
+
+Le contrat formel est
+[`contracts/watchdog.heartbeat.v1.schema.json`](contracts/watchdog.heartbeat.v1.schema.json).
+Le champ `schema` est recommandé pour les nouveaux producteurs mais reste
+optionnel afin d'accepter les gateways historiques.
+
+Pour BACnet, `device.protocol` vaut `bacnet`. Pour Modbus,
+`device.protocol` et `health.protocol` valent `modbus`, et `health.modbus`
+décrit au minimum l'état des lectures terrain. L'UUID du topic et
+`device.uuid` doivent être identiques.
 
 ## États fleet (flow 04)
 
@@ -118,7 +136,10 @@ dédupliqués par UUID. Une erreur sur une fleet n'annule pas les résultats des
 npm test
 ```
 
-Fichiers : `tests/watchdog.*.v1.test.js` (contrat `watchdog.event.v1`, ingest HTTP, anomalies, incidents, actions, résolutions). Il n'existe pas de `tests/contract.test.js`.
+Fichiers : `tests/watchdog.*.v1.test.js` (contrats
+`watchdog.heartbeat.v1` et `watchdog.event.v1`, kit d'intégration, ingest
+HTTP, anomalies, incidents, actions, résolutions). Il n'existe pas de
+`tests/contract.test.js`.
 
 ## Ingest HTTP (producteurs CSV / Météo)
 
@@ -129,3 +150,46 @@ Les stacks CSV et Météo sont séparées du siège. Pour viser Watchdog sans ac
 - Flags d'émission : CSV `watchdog.enabled` et Météo `WATCHDOG_ENABLED` restent **OFF** tant que l'activation n'est pas explicite
 
 `GET /healthz` n'exige pas de token. `/v1/*` l'exige dès que le secret siège est non vide.
+
+## Producteur dju-daily (`METEO_STAT_DAILY`)
+
+Flux distinct de `METEO_01`. Il décrit le worker quotidien de `dju-autonome`, qui calcule et écrit les statistiques de Genève. Watchdog n'est pas la base de ces statistiques.
+
+| Identifiant | Valeur |
+| --- | --- |
+| `flow_id` | `METEO_STAT_DAILY` |
+| `producer` | `dju-daily` |
+| `source_id` | `SRC_SQLSERVER_METEO` |
+| `connector_id` | `CONN_DJU_DAILY` |
+| `destination_id` | `DST_SQL_GENEVE_METEO_STAT` |
+
+Contrat inchangé : `watchdog.event.v1`. Un événement terminal par passage qui a réellement traité des journées closes. Le corps ne contient ni ligne de `dbo.Geneve_Meteo_STAT`, ni mesure, ni secret.
+
+| Situation | `event_type` | `status` |
+| --- | --- | --- |
+| Écriture relue ou valeurs déjà confirmées en base | `execution_completed` | `success` |
+| Source incomplète, écriture refusée par le worker | `data_missing` | `partial` |
+| Lecture source, écriture, relecture ou validation en échec | `connector_error`, `destination_error`, `validation_failed` ou `execution_failed` | `failure` |
+
+Deux clauses `event_failure`, dérivées du contrat, sans copie indépendante :
+
+| Clause | Ouverture | Signature | Fermeture |
+| --- | --- | --- | --- |
+| `availability` | `connector_error`, `destination_error`, `execution_failed`, `validation_failed` avec `status: failure` | signature de l'événement | `execution_completed` / `success` |
+| `source_completeness` | `data_missing` avec `status: partial` | `source_data_incomplete`, déclarée sur la clause | `execution_completed` / `success` |
+
+`data_missing` reste un écart de données. Il n'est pas réécrit en `execution_failed`. La signature ne contient ni date ni message SQL. Les répétitions du même écart incrémentent la même anomalie. Les événements d'origine restent dans le registre.
+
+Le worker n'envoie pas la liste des journées. `business_date` n'est présent que lorsqu'une seule journée du passage est incomplète, et `incomplete_days` est un compte. Watchdog ne reconstitue pas les journées absentes du payload.
+
+`execution_completed` / `success` ferme cette anomalie. Le worker ne produit ce succès que lorsque toutes les journées closes du passage sont confirmées, par écriture relue ou par valeurs déjà présentes. Une panne technique ne ferme pas l'anomalie de données. Une semaine ou un mois encore ouvert (`period-open`) n'empêche pas ce succès et ne concerne pas cette clause.
+
+Il n'y a pas de règle de fraîcheur ni d'heure obligatoire. `METEO_01` et `CSV_OASSIS_01` ne déclarent pas `open_statuses` : leur défaut reste `failure`, et leur `data_missing` n'ouvre rien. Le second fait similaire peut ouvrir un incident `DETECTE` par le moteur déjà en place. Ce `DETECTE` passe à `CLOS` sur le succès du flux. Les états suivants restent manuels.
+
+Côté producteur, le défaut est `WATCHDOG_ENABLED=false`. Pour l'activer après le déploiement de ce contrat :
+
+- `WATCHDOG_URL=http://<watchdog-host>:8091/v1/events`
+- `WATCHDOG_TOKEN`, identique à `WATCHDOG_INGEST_TOKEN`, transmis dans `X-Watchdog-Token`
+- `WATCHDOG_TIMEOUT_MS` optionnel, défaut 3000, borné de 200 à 10000
+
+Le drapeau désactivé ne change pas le calcul ni l'écriture. Un Hub injoignable ne change pas le résultat SQL. Watchdog ne relance pas le worker et n'écrit pas dans les tables métier.

@@ -111,7 +111,7 @@
     },
     "producer": {
       "type": "string",
-      "enum": ["csv-to-sql", "api-meteo", "bacnet-gateway", "watchdog-internal"]
+      "enum": ["csv-to-sql", "api-meteo", "bacnet-gateway", "watchdog-internal", "dju-daily"]
     },
     "metadata": {
       "type": "object",

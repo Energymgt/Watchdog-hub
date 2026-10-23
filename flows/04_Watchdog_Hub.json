@@ -122,8 +122,8 @@
         "type": "function",
         "z": "c4b9e2d1a8f35001",
         "name": "Evaluate fleet watchdog",
-        "func": "const now = Date.now();\nconst cfg = flow.get('fleetAdminConfig') || {};\nfunction fleetNum(key, fallback, min, max) {\n    const n = Number(cfg[key]);\n    if (!Number.isFinite(n) || n < min || n > max) return fallback;\n    return n;\n}\nfunction fleetSecret(envKey, uiKey) {\n    const fromUi = String(cfg[uiKey] || '').trim();\n    if (fromUi) return fromUi;\n    return String(env.get(envKey) || '').trim();\n}\nconst offlineGraceMs = fleetNum('offlineGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst firstSeenGraceMs = fleetNum('firstSeenGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst confirmsRequired = fleetNum('confirmsRequired', 2, 1, 5);\nconst graceMin = Math.round(offlineGraceMs / 60000);\nconst isPoll = String(msg.topic || '') !== 'heartbeat_evaluate';\n\nlet fleetStartedAt = Number(flow.get('fleetStartedAt') || 0);\nif (!fleetStartedAt) {\n    fleetStartedAt = now;\n    flow.set('fleetStartedAt', fleetStartedAt);\n}\nconst fleetGrace = (now - fleetStartedAt) < offlineGraceMs;\n\nfunction parisTime(ts) {\n    try {\n        return new Date(ts).toLocaleString('fr-CH', { timeZone: 'Europe/Paris' });\n    } catch (e) {\n        return new Date(ts).toISOString();\n    }\n}\n\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst devices = Array.isArray(body.d) ? body.d : [];\nif (isPoll) {\n    flow.set('fleetBalenaDevices', devices);\n}\nif (devices.length === 0 && Number(msg.statusCode || 0) >= 400) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Balena API HTTP ' + msg.statusCode });\n    node.warn('Balena API error HTTP ' + msg.statusCode);\n    return null;\n}\n\nconst heartbeats = flow.get('fleetHeartbeats') || {};\nconst prev = flow.get('fleetWatchdogState') || {};\nlet confirmed = flow.get('fleetConfirmedState');\nlet firstSeenAt = flow.get('fleetFirstSeenAt');\nlet candidate = flow.get('fleetCandidate');\nif (!confirmed || typeof confirmed !== 'object') {\n    confirmed = {};\n    Object.keys(prev).forEach(function (uuid) {\n        const state = prev[uuid] && prev[uuid].state;\n        if (state) confirmed[uuid] = { state: state };\n    });\n}\nif (!firstSeenAt || typeof firstSeenAt !== 'object') {\n    firstSeenAt = {};\n    Object.keys(prev).forEach(function (uuid) { firstSeenAt[uuid] = 1; });\n    Object.keys(heartbeats).forEach(function (uuid) {\n        if (!firstSeenAt[uuid]) firstSeenAt[uuid] = 1;\n    });\n}\nif (!candidate || typeof candidate !== 'object') candidate = {};\n\nconst next = {};\nconst transitions = [];\n\nfunction hbAge(uuid) {\n    const hb = heartbeats[uuid];\n    if (!hb) return null;\n    const ts = Number(hb.ts || hb.receivedAt || 0);\n    if (!ts) return null;\n    return now - ts;\n}\n\nfunction considerAlert(entry) {\n    const uuid = entry.uuid;\n    if (!firstSeenAt[uuid]) firstSeenAt[uuid] = now;\n    if (!isPoll) return;\n    const prevState = (confirmed[uuid] && confirmed[uuid].state) ? confirmed[uuid].state : 'ok';\n    if (entry.state === prevState) {\n        candidate[uuid] = { state: entry.state, count: 0 };\n        return;\n    }\n    const cur = candidate[uuid];\n    if (cur && cur.state === entry.state) candidate[uuid].count += 1;\n    else candidate[uuid] = { state: entry.state, count: 1 };\n    const inFirstSeenGrace = (now - Number(firstSeenAt[uuid] || now)) < firstSeenGraceMs;\n    if (inFirstSeenGrace) return;\n    if (candidate[uuid].count >= confirmsRequired) {\n        transitions.push({\n            uuid: uuid,\n            name: entry.name,\n            from: prevState,\n            to: entry.state,\n            severity: entry.severity,\n            detail: entry.detail,\n            direction: entry.state === 'ok' ? 'up' : 'down'\n        });\n        confirmed[uuid] = { state: entry.state };\n        candidate[uuid] = { state: entry.state, count: 0 };\n    }\n}\n\nconst seen = {};\nfor (let i = 0; i < devices.length; i += 1) {\n    const d = devices[i] || {};\n    const uuid = String(d.uuid || '').trim();\n    if (!uuid) continue;\n    seen[uuid] = true;\n    const name = String(d.device_name || uuid);\n    const online = !!d.is_online;\n    const age = hbAge(uuid);\n    const hbOk = age !== null && age <= offlineGraceMs;\n\n    let state;\n    let severity;\n    let detail;\n    if (fleetGrace) {\n        state = 'ok';\n        severity = 'ok';\n        detail = 'boot grace flotte';\n    } else if (!online && !hbOk) {\n        state = 'dead';\n        severity = 'critical';\n        detail = 'Balena offline et heartbeat absent > ' + graceMin + ' min';\n    } else if (!online && hbOk) {\n        state = 'cloud_down';\n        severity = 'warning';\n        detail = 'Balena offline, heartbeat MQTT OK (collecte locale possible)';\n    } else if (online && !hbOk) {\n        state = 'heartbeat_missing';\n        severity = 'high';\n        detail = 'Balena online, heartbeat MQTT absent > ' + graceMin + ' min';\n    } else {\n        state = 'ok';\n        severity = 'ok';\n        detail = 'Balena online, heartbeat OK';\n    }\n\n    const entry = {\n        uuid: uuid,\n        name: name,\n        online: online,\n        hbOk: hbOk,\n        state: state,\n        severity: severity,\n        detail: detail,\n        lastConnectivity: d.last_connectivity_event || null,\n        overallStatus: d.overall_status || null\n    };\n    next[uuid] = entry;\n    considerAlert(entry);\n}\n\nconst hbUuids = Object.keys(heartbeats);\nfor (let h = 0; h < hbUuids.length; h += 1) {\n    const uuid = hbUuids[h];\n    if (seen[uuid]) continue;\n    const age = hbAge(uuid);\n    const hbOk = age !== null && age <= offlineGraceMs;\n    const name = (heartbeats[uuid].device && heartbeats[uuid].device.name) ? heartbeats[uuid].device.name : uuid;\n    const state = fleetGrace ? 'ok' : (hbOk ? 'unknown_online' : 'dead');\n    const severity = fleetGrace ? 'ok' : (hbOk ? 'warning' : 'critical');\n    const detail = fleetGrace\n        ? 'boot grace flotte'\n        : (hbOk\n            ? 'Heartbeat OK mais appareil absent de l API Balena'\n            : 'Heartbeat absent > ' + graceMin + ' min (appareil inconnu de ce poll Balena)');\n    const entry = {\n        uuid: uuid,\n        name: name,\n        online: false,\n        hbOk: hbOk,\n        state: state,\n        severity: severity,\n        detail: detail\n    };\n    next[uuid] = entry;\n    considerAlert(entry);\n}\n\nconst enrolled = flow.get('fleetEnrolledDevices') || {};\nObject.keys(enrolled).forEach(function (uuid) {\n    const meta = enrolled[uuid] && typeof enrolled[uuid] === 'object' ? enrolled[uuid] : {};\n    if (next[uuid]) {\n        if (meta.name) next[uuid].name = String(meta.name);\n        next[uuid].enrolled = true;\n        return;\n    }\n    next[uuid] = {\n        uuid: uuid,\n        name: String(meta.name || uuid),\n        online: false,\n        hbOk: false,\n        state: 'unknown',\n        severity: 'unknown',\n        detail: 'En attente du premier heartbeat MQTT',\n        enrolled: true\n    };\n});\n\nif (isPoll) {\n    Object.keys(candidate).forEach(function (uuid) { if (!next[uuid]) delete candidate[uuid]; });\n    Object.keys(confirmed).forEach(function (uuid) { if (!next[uuid]) delete confirmed[uuid]; });\n    Object.keys(firstSeenAt).forEach(function (uuid) { if (!next[uuid]) delete firstSeenAt[uuid]; });\n}\n\nlet history = flow.get('fleetTransitionHistory') || [];\nif (isPoll) {\n    transitions.forEach(function (transition) {\n        history.push(Object.assign({ at: now }, transition));\n    });\n    if (history.length > 500) history = history.slice(history.length - 500);\n    flow.set('fleetTransitionHistory', history);\n    flow.set('fleetConfirmedState', confirmed);\n    flow.set('fleetCandidate', candidate);\n}\nflow.set('fleetFirstSeenAt', firstSeenAt);\nflow.set('fleetWatchdogState', next);\nflow.set('fleetLastEvaluationAt', now);\n\nconst downCount = Object.keys(next).filter(function (k) { return next[k].state !== 'ok'; }).length;\nconst pendingCount = isPoll\n    ? Object.keys(candidate).filter(function (k) { return Number(candidate[k] && candidate[k].count || 0) > 0; }).length\n    : 0;\nnode.status({\n    fill: downCount ? 'red' : 'green',\n    shape: 'dot',\n    text: devices.length + ' devices, ' + downCount + ' down, ' + pendingCount + ' pending, ' + transitions.length + ' transitions'\n});\n\nconst webhook = fleetSecret('TEAMS_WEBHOOK_URL', 'teamsWebhookUrl');\nconst snapshotTrigger = { topic: 'fleet_state_changed' };\nif (!isPoll || !webhook || transitions.length === 0) {\n    return [null, snapshotTrigger];\n}\n\nconst order = { ok: 0, warning: 1, high: 2, critical: 3 };\nconst worst = transitions.reduce(function (acc, t) {\n    const sev = t.direction === 'up' ? 'ok' : t.severity;\n    return (order[sev] || 0) > (order[acc] || 0) ? sev : acc;\n}, 'ok');\n\nconst title = (worst === 'ok' ? '[RECOVERY] ' : (worst === 'critical' ? '[CRITIQUE] ' : '[ALERTE] '))\n    + 'HUB Watchdog Hub';\n\nconst facts = [\n    { title: 'Source', value: 'HUB de supervision' },\n    { title: 'Quand', value: parisTime(now) }\n];\nfor (let t = 0; t < transitions.length; t += 1) {\n    const tr = transitions[t];\n    facts.push({\n        title: tr.name,\n        value: tr.uuid + ' — ' + (tr.direction === 'up' ? 'OK' : tr.to) + ' — ' + tr.detail\n    });\n}\n\nconst color = worst === 'ok' ? 'good' : (worst === 'critical' ? 'attention' : 'warning');\nmsg.method = 'POST';\nmsg.url = webhook;\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.payload = {\n    type: 'message',\n    attachments: [{\n        contentType: 'application/vnd.microsoft.teams.card.adaptive',\n        contentUrl: null,\n        content: {\n            $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',\n            type: 'AdaptiveCard',\n            version: '1.4',\n            body: [\n                { type: 'TextBlock', size: 'Large', weight: 'Bolder', text: title, wrap: true, color: color },\n                { type: 'FactSet', facts: facts }\n            ]\n        }\n    }]\n};\nmsg.teamsRetryCount = 0;\nreturn [msg, snapshotTrigger];",
-        "outputs": 2,
+        "func": "const now = Date.now();\nconst cfg = flow.get('fleetAdminConfig') || {};\nfunction fleetNum(key, fallback, min, max) {\n    const n = Number(cfg[key]);\n    if (!Number.isFinite(n) || n < min || n > max) return fallback;\n    return n;\n}\nfunction fleetSecret(envKey, uiKey) {\n    const fromUi = String(cfg[uiKey] || '').trim();\n    if (fromUi) return fromUi;\n    return String(env.get(envKey) || '').trim();\n}\nconst offlineGraceMs = fleetNum('offlineGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst firstSeenGraceMs = fleetNum('firstSeenGraceMinutes', 5, 1, 60) * 60 * 1000;\nconst confirmsRequired = fleetNum('confirmsRequired', 2, 1, 5);\nconst graceMin = Math.round(offlineGraceMs / 60000);\nconst isPoll = String(msg.topic || '') !== 'heartbeat_evaluate';\n\nlet fleetStartedAt = Number(flow.get('fleetStartedAt') || 0);\nif (!fleetStartedAt) {\n    fleetStartedAt = now;\n    flow.set('fleetStartedAt', fleetStartedAt);\n}\nconst fleetGrace = (now - fleetStartedAt) < offlineGraceMs;\n\nfunction parisTime(ts) {\n    try {\n        return new Date(ts).toLocaleString('fr-CH', { timeZone: 'Europe/Paris' });\n    } catch (e) {\n        return new Date(ts).toISOString();\n    }\n}\n\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst devices = Array.isArray(body.d) ? body.d : [];\nif (isPoll) {\n    flow.set('fleetBalenaDevices', devices);\n}\nif (devices.length === 0 && Number(msg.statusCode || 0) >= 400) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Balena API HTTP ' + msg.statusCode });\n    node.warn('Balena API error HTTP ' + msg.statusCode);\n    return null;\n}\n\nconst heartbeats = flow.get('fleetHeartbeats') || {};\nconst prev = flow.get('fleetWatchdogState') || {};\nlet confirmed = flow.get('fleetConfirmedState');\nlet firstSeenAt = flow.get('fleetFirstSeenAt');\nlet candidate = flow.get('fleetCandidate');\nif (!confirmed || typeof confirmed !== 'object') {\n    confirmed = {};\n    Object.keys(prev).forEach(function (uuid) {\n        const state = prev[uuid] && prev[uuid].state;\n        if (state) confirmed[uuid] = { state: state };\n    });\n}\nif (!firstSeenAt || typeof firstSeenAt !== 'object') {\n    firstSeenAt = {};\n    Object.keys(prev).forEach(function (uuid) { firstSeenAt[uuid] = 1; });\n    Object.keys(heartbeats).forEach(function (uuid) {\n        if (!firstSeenAt[uuid]) firstSeenAt[uuid] = 1;\n    });\n}\nif (!candidate || typeof candidate !== 'object') candidate = {};\n\nconst next = {};\nconst transitions = [];\n\nfunction hbAge(uuid) {\n    const hb = heartbeats[uuid];\n    if (!hb) return null;\n    const ts = Number(hb.ts || hb.receivedAt || 0);\n    if (!ts) return null;\n    return now - ts;\n}\n\nfunction considerAlert(entry) {\n    const uuid = entry.uuid;\n    if (!firstSeenAt[uuid]) firstSeenAt[uuid] = now;\n    if (!isPoll) return;\n    const prevState = (confirmed[uuid] && confirmed[uuid].state) ? confirmed[uuid].state : 'ok';\n    if (entry.state === prevState) {\n        candidate[uuid] = { state: entry.state, count: 0 };\n        return;\n    }\n    const cur = candidate[uuid];\n    if (cur && cur.state === entry.state) candidate[uuid].count += 1;\n    else candidate[uuid] = { state: entry.state, count: 1 };\n    const inFirstSeenGrace = (now - Number(firstSeenAt[uuid] || now)) < firstSeenGraceMs;\n    if (inFirstSeenGrace) return;\n    if (candidate[uuid].count >= confirmsRequired) {\n        transitions.push({\n            uuid: uuid,\n            name: entry.name,\n            from: prevState,\n            to: entry.state,\n            severity: entry.severity,\n            detail: entry.detail,\n            direction: entry.state === 'ok' ? 'up' : 'down'\n        });\n        confirmed[uuid] = { state: entry.state };\n        candidate[uuid] = { state: entry.state, count: 0 };\n    }\n}\n\nconst seen = {};\nfor (let i = 0; i < devices.length; i += 1) {\n    const d = devices[i] || {};\n    const uuid = String(d.uuid || '').trim();\n    if (!uuid) continue;\n    seen[uuid] = true;\n    const name = String(d.device_name || uuid);\n    const online = !!d.is_online;\n    const age = hbAge(uuid);\n    const hbOk = age !== null && age <= offlineGraceMs;\n\n    let state;\n    let severity;\n    let detail;\n    if (fleetGrace) {\n        state = 'ok';\n        severity = 'ok';\n        detail = 'boot grace flotte';\n    } else if (!online && !hbOk) {\n        state = 'dead';\n        severity = 'critical';\n        detail = 'Balena offline et heartbeat absent > ' + graceMin + ' min';\n    } else if (!online && hbOk) {\n        state = 'cloud_down';\n        severity = 'warning';\n        detail = 'Balena offline, heartbeat MQTT OK (collecte locale possible)';\n    } else if (online && !hbOk) {\n        state = 'heartbeat_missing';\n        severity = 'high';\n        detail = 'Balena online, heartbeat MQTT absent > ' + graceMin + ' min';\n    } else {\n        state = 'ok';\n        severity = 'ok';\n        detail = 'Balena online, heartbeat OK';\n    }\n\n    const entry = {\n        uuid: uuid,\n        name: name,\n        online: online,\n        hbOk: hbOk,\n        state: state,\n        severity: severity,\n        detail: detail,\n        lastConnectivity: d.last_connectivity_event || null,\n        overallStatus: d.overall_status || null\n    };\n    next[uuid] = entry;\n    considerAlert(entry);\n}\n\nconst hbUuids = Object.keys(heartbeats);\nfor (let h = 0; h < hbUuids.length; h += 1) {\n    const uuid = hbUuids[h];\n    if (seen[uuid]) continue;\n    const age = hbAge(uuid);\n    const hbOk = age !== null && age <= offlineGraceMs;\n    const name = (heartbeats[uuid].device && heartbeats[uuid].device.name) ? heartbeats[uuid].device.name : uuid;\n    const state = fleetGrace ? 'ok' : (hbOk ? 'unknown_online' : 'dead');\n    const severity = fleetGrace ? 'ok' : (hbOk ? 'warning' : 'critical');\n    const detail = fleetGrace\n        ? 'boot grace flotte'\n        : (hbOk\n            ? 'Heartbeat OK mais appareil absent de l API Balena'\n            : 'Heartbeat absent > ' + graceMin + ' min (appareil inconnu de ce poll Balena)');\n    const entry = {\n        uuid: uuid,\n        name: name,\n        online: false,\n        hbOk: hbOk,\n        state: state,\n        severity: severity,\n        detail: detail\n    };\n    next[uuid] = entry;\n    considerAlert(entry);\n}\n\nconst enrolled = flow.get('fleetEnrolledDevices') || {};\nObject.keys(enrolled).forEach(function (uuid) {\n    const meta = enrolled[uuid] && typeof enrolled[uuid] === 'object' ? enrolled[uuid] : {};\n    if (next[uuid]) {\n        if (meta.name) next[uuid].name = String(meta.name);\n        next[uuid].enrolled = true;\n        return;\n    }\n    next[uuid] = {\n        uuid: uuid,\n        name: String(meta.name || uuid),\n        online: false,\n        hbOk: false,\n        state: 'unknown',\n        severity: 'unknown',\n        detail: 'En attente du premier heartbeat MQTT',\n        enrolled: true\n    };\n});\n\nif (isPoll) {\n    Object.keys(candidate).forEach(function (uuid) { if (!next[uuid]) delete candidate[uuid]; });\n    Object.keys(confirmed).forEach(function (uuid) { if (!next[uuid]) delete confirmed[uuid]; });\n    Object.keys(firstSeenAt).forEach(function (uuid) { if (!next[uuid]) delete firstSeenAt[uuid]; });\n}\n\nlet history = flow.get('fleetTransitionHistory') || [];\nif (isPoll) {\n    transitions.forEach(function (transition) {\n        history.push(Object.assign({ at: now }, transition));\n    });\n    if (history.length > 500) history = history.slice(history.length - 500);\n    flow.set('fleetTransitionHistory', history);\n    flow.set('fleetConfirmedState', confirmed);\n    flow.set('fleetCandidate', candidate);\n}\nflow.set('fleetFirstSeenAt', firstSeenAt);\nflow.set('fleetWatchdogState', next);\nflow.set('fleetLastEvaluationAt', now);\n\nconst downCount = Object.keys(next).filter(function (k) { return next[k].state !== 'ok'; }).length;\nconst pendingCount = isPoll\n    ? Object.keys(candidate).filter(function (k) { return Number(candidate[k] && candidate[k].count || 0) > 0; }).length\n    : 0;\nnode.status({\n    fill: downCount ? 'red' : 'green',\n    shape: 'dot',\n    text: devices.length + ' devices, ' + downCount + ' down, ' + pendingCount + ' pending, ' + transitions.length + ' transitions'\n});\n\nconst webhook = fleetSecret('TEAMS_WEBHOOK_URL', 'teamsWebhookUrl');\nconst snapshotTrigger = { topic: 'fleet_state_changed' };\nif (!isPoll) {\n    return [null, snapshotTrigger, null, null];\n}\nconst port = Number(env.get('WATCHDOG_INGEST_PORT')) || 8091;\nconst token = String(env.get('WATCHDOG_INGEST_TOKEN') || '').trim();\nconst base = 'http://127.0.0.1:' + port;\nfunction alertHeaders() {\n    const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };\n    if (token) headers['X-Watchdog-Token'] = token;\n    if (webhook) headers['X-Watchdog-Channel-Secret'] = webhook;\n    return headers;\n}\nlet alertMsg = null;\nif (transitions.length) {\n    alertMsg = {\n        method: 'POST',\n        url: base + '/v1/alerts/device-transitions',\n        headers: alertHeaders(),\n        payload: {\n            transitions: transitions.map(function (tr) {\n                return {\n                    uuid: tr.uuid,\n                    name: tr.name,\n                    from: tr.from,\n                    to: tr.to,\n                    severity: tr.severity,\n                    detail: tr.detail,\n                    direction: tr.direction,\n                    at: now,\n                    signal_id: 'fleet:' + tr.uuid + ':' + String(tr.from || '') + ':' + tr.to + ':' + tr.direction + ':' + now,\n                    confirmed: true\n                };\n            })\n        }\n    };\n}\nlet dispatchMsg = null;\nif (webhook) {\n    dispatchMsg = {\n        method: 'POST',\n        url: base + '/v1/alerts/dispatch',\n        headers: alertHeaders(),\n        payload: {}\n    };\n}\nreturn [null, snapshotTrigger, alertMsg, dispatchMsg];\n",
+        "outputs": 4,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
@@ -136,7 +136,13 @@
                 "e6db24f3ca057104"
             ],
             [
-                "d5ca13e2b9f46103"
+                "c4b9e2d1a8f3500c"
+            ],
+            [
+                "c71a000000000007"
+            ],
+            [
+                "c71a000000000002"
             ]
         ]
     },
@@ -389,7 +395,8 @@
                 "d5ca13e2b9f46102",
                 "f10a000000000001",
                 "a10a000000000001",
-                "b10a000000000001"
+                "b10a000000000001",
+                "c71a000000000004"
             ],
             []
         ]
@@ -826,6 +833,166 @@
         "wires": [
             [
                 "e6db24f3ca057104"
+            ]
+        ]
+    },
+    {
+        "id": "c4b9e2d1a8f3500c",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Projeter santé Modbus",
+        "func": "const states = flow.get('fleetWatchdogState') || {};\nconst heartbeats = flow.get('fleetHeartbeats') || {};\nconst cfg = flow.get('fleetAdminConfig') || {};\nconst graceMinutes = Number(cfg.offlineGraceMinutes) >= 1 ? Number(cfg.offlineGraceMinutes) : 5;\nconst fleetStartedAt = Number(flow.get('fleetStartedAt') || 0);\nconst inGrace = fleetStartedAt > 0 && Date.now() - fleetStartedAt < graceMinutes * 60000;\nlet changed = false;\nObject.keys(states).forEach(function (uuid) {\n    const heartbeat = heartbeats[uuid] || {};\n    const health = heartbeat.health || {};\n    const modbus = health.modbus;\n    if (inGrace || !modbus || typeof modbus.ok !== 'boolean' || modbus.ok) return;\n    const entry = states[uuid];\n    if (!entry) return;\n    const lastError = modbus.lastError && modbus.lastError.message\n        ? String(modbus.lastError.message)\n        : 'Erreur Modbus détectée';\n    const detail = 'Modbus : ' + lastError.slice(0, 240);\n    if (entry.state !== 'dead' || entry.severity !== 'critical' || entry.detail !== detail) {\n        entry.state = 'dead';\n        entry.severity = 'critical';\n        entry.detail = detail;\n        changed = true;\n    }\n});\nif (changed) flow.set('fleetWatchdogState', states);\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1060,
+        "y": 220,
+        "wires": [
+            [
+                "d5ca13e2b9f46103"
+            ]
+        ]
+    },
+    {
+        "id": "c71a000000000007",
+        "type": "fleet-transition-outbox",
+        "z": "c4b9e2d1a8f35001",
+        "name": "File transitions flotte",
+        "x": 1100,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "c71a000000000001",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "POST alert transitions",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "x": 1100,
+        "y": 80,
+        "wires": [
+            [
+                "c71a000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "c71a000000000002",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "POST alert dispatch",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "x": 1100,
+        "y": 120,
+        "wires": [
+            [
+                "c71a000000000003"
+            ]
+        ]
+    },
+    {
+        "id": "c71a000000000003",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Swallow alert API response",
+        "func": "const code = Number(msg.statusCode || 0);\nif (msg.error || code >= 400) {\n    node.warn('Enregistrement des alertes Watchdog non confirmé');\n}\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1340,
+        "y": 100,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "c71a000000000004",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Alerts UI Actions",
+        "func": "const request = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(request.action || '');\nconst data = (request.data && typeof request.data === 'object') ? request.data : {};\nconst allowed = ['alerts_snapshot_get', 'alerts_get', 'alerts_ack'];\nif (allowed.indexOf(action) === -1) return [null, null];\nmsg._uibOrigin = msg._socketId;\nmsg._alertsAction = action;\nconst port = Number(env.get('WATCHDOG_INGEST_PORT')) || 8091;\nconst base = 'http://127.0.0.1:' + port;\nconst token = String(env.get('WATCHDOG_INGEST_TOKEN') || '').trim();\nmsg.headers = { Accept: 'application/json' };\nif (token) msg.headers['X-Watchdog-Token'] = token;\nfunction fail(error, message) {\n    const outgoing = { topic: 'alerts_error', payload: { ok: false, error: error, message: message, operation: action } };\n    if (msg._uibOrigin) outgoing._uib = { originator: msg._uibOrigin };\n    return [null, outgoing];\n}\nfunction alertId() {\n    const value = String(data.alert_id || '').trim();\n    return value && value.length <= 80 && !/[\\\\/?#]/.test(value) ? value : '';\n}\nif (action === 'alerts_snapshot_get') {\n    msg.method = 'GET';\n    msg.url = base + '/v1/alerts?limit=100';\n    msg.payload = {};\n    msg._alertsStep = 'snapshot';\n    return [msg, null];\n}\nconst id = alertId();\nif (!id) return fail('invalid_alert_id', 'Identifiant d’alerte invalide.');\nif (action === 'alerts_ack') {\n    msg.method = 'POST';\n    msg.url = base + '/v1/alerts/' + encodeURIComponent(id) + '/ack';\n    msg.headers['Content-Type'] = 'application/json';\n    msg.payload = { actor: String(data.actor || '').trim() };\n    msg._alertsStep = 'ack';\n    return [msg, null];\n}\nmsg.method = 'GET';\nmsg.url = base + '/v1/alerts/' + encodeURIComponent(id);\nmsg.payload = {};\nmsg._alertsStep = 'detail';\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 310,
+        "y": 760,
+        "wires": [
+            [
+                "c71a000000000005"
+            ],
+            [
+                "d5ca13e2b9f46101"
+            ]
+        ]
+    },
+    {
+        "id": "c71a000000000005",
+        "type": "http request",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Watchdog alerts API",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "x": 560,
+        "y": 760,
+        "wires": [
+            [
+                "c71a000000000006"
+            ]
+        ]
+    },
+    {
+        "id": "c71a000000000006",
+        "type": "function",
+        "z": "c4b9e2d1a8f35001",
+        "name": "Build Alerts UI Response",
+        "func": "const statusNumber = Number(msg.statusCode);\nconst code = Number.isFinite(statusNumber) ? statusNumber : 0;\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\nconst action = String(msg._alertsAction || '');\nfunction targetUi(topic, payload) {\n    const outgoing = { topic: topic, payload: payload };\n    if (msg._uibOrigin) outgoing._uib = { originator: msg._uibOrigin };\n    return [null, outgoing];\n}\nfunction apiError() {\n    const error = String(body.error || (msg.error && msg.error.message) || 'registry_unavailable');\n    const labels = {\n        unauthorized: 'Accès à l’API Watchdog refusé.',\n        not_found: 'L’alerte demandée est introuvable.',\n        invalid_alert_id: 'Identifiant d’alerte invalide.',\n        actor_required: 'L’acteur de l’accusé est obligatoire.',\n        alert_closed: 'Cette alerte est déjà close.',\n        registry_unavailable: 'Le registre Watchdog est indisponible.'\n    };\n    return targetUi('alerts_error', { ok: false, error: error, message: labels[error] || 'Échec de la lecture des alertes.', statusCode: code || null, operation: action });\n}\nif (code < 200 || code >= 300 || body.ok === false || msg.error) return apiError();\nif (msg._alertsStep === 'snapshot') return targetUi('alerts_snapshot', body);\nreturn targetUi('alerts_detail', body);",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 820,
+        "y": 760,
+        "wires": [
+            [],
+            [
+                "d5ca13e2b9f46101"
             ]
         ]
     }

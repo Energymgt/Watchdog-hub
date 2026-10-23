@@ -3,7 +3,7 @@
 
     var FLOW_STATUS_META = {
         ok: { label: 'Opérationnel', tone: 'ok', rank: 0 },
-        unknown: { label: 'UNKNOWN', tone: 'unknown', rank: 1 },
+        unknown: { label: 'Inconnu', tone: 'unknown', rank: 1 },
         degraded: { label: 'Dégradé', tone: 'warning', rank: 2 },
         down: { label: 'Indisponible', tone: 'critical', rank: 3 }
     };
@@ -14,7 +14,7 @@
         EN_CORRECTION: { label: 'En correction', tone: 'critical', rank: 4 },
         EN_VALIDATION: { label: 'En validation', tone: 'warning', rank: 5 },
         RESOLU: { label: 'Résolu', tone: 'ok', rank: 0 },
-        CLOS: { label: 'Clos', tone: 'unknown', rank: 0 }
+        CLOS: { label: 'Clos', tone: 'closed', rank: 0 }
     };
     var REASON_LABELS = {
         no_contract: 'Contrat de santé absent',

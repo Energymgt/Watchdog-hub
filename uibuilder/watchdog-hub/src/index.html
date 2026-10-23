@@ -1,10 +1,27 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr" data-theme="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
-    <title>Watchdog Hub - BACnet Gateway</title>
+    <meta name="color-scheme" content="light dark">
+    <title>Watchdog Hub</title>
+    <script>
+        (function () {
+            var theme = 'dark';
+            try {
+                if (!localStorage.getItem('watchdog-theme-v2')) {
+                    localStorage.setItem('watchdog-theme', 'dark');
+                    localStorage.setItem('watchdog-theme-v2', '1');
+                }
+                var saved = localStorage.getItem('watchdog-theme');
+                if (saved === 'dark' || saved === 'light') theme = saved;
+            } catch (error) {
+                theme = 'dark';
+            }
+            document.documentElement.setAttribute('data-theme', theme);
+            document.documentElement.style.colorScheme = theme;
+        }());
+    </script>
     <link rel="stylesheet" href="./index.css">
 </head>
 <body>
@@ -24,10 +41,12 @@
     <script src="./store/flows-store.js"></script>
     <script src="./store/anomalies-store.js"></script>
     <script src="./store/events-store.js"></script>
+    <script src="./store/alerts-store.js"></script>
     <script src="./services/uibuilder-client.js"></script>
     <script src="./services/flows-uibuilder-client.js"></script>
     <script src="./services/anomalies-uibuilder-client.js"></script>
     <script src="./services/events-uibuilder-client.js"></script>
+    <script src="./services/alerts-uibuilder-client.js"></script>
     <script src="./components/ui/ui-button.js"></script>
     <script src="./components/ui/ui-banner.js"></script>
     <script src="./components/ui/ui-field.js"></script>
@@ -59,6 +78,7 @@
     <script src="./components/flows/incident-detail.js"></script>
     <script src="./components/anomalies/anomalies-page.js"></script>
     <script src="./components/events/events-page.js"></script>
+    <script src="./components/alerts/alerts-page.js"></script>
     <script src="./app.js"></script>
 </body>
 </html>

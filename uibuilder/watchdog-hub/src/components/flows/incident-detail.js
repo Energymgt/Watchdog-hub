@@ -36,6 +36,27 @@
             },
             canResolve: function () {
                 return (this.detail.allowedTransitions || []).indexOf('RESOLU') !== -1;
+            },
+            lastAction: function () {
+                var actions = this.detail.actions || [];
+                if (!actions.length) return null;
+                return actions.slice().sort(function (a, b) {
+                    return (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0);
+                })[0];
+            },
+            lastActionText: function () {
+                var action = this.lastAction;
+                if (!action) return 'Aucune action enregistrée.';
+                return this.formatDateTime(action.created_at) + ', ' + (action.actor || 'opérateur inconnu') + ' : ' + (action.comment || action.kind || 'action');
+            },
+            nextTransitionText: function () {
+                var self = this;
+                var labels = this.regularTransitions.map(function (state) {
+                    return self.incidentMeta(state).label;
+                });
+                if (this.canResolve) labels.push('Résolution');
+                if (!labels.length) return 'Aucune transition autorisée.';
+                return labels.join(', ');
             }
         },
         watch: {
@@ -98,7 +119,16 @@
                     '<button data-drawer-initial-focus class="modal__close" type="button" aria-label="Fermer le détail" @click="close">×</button>' +
                 '</div>' +
                 '<p id="incident-detail-description" class="incident-id">{{ incident.incident_id }}</p>' +
-                '<span class="status-badge" :class="\'status-badge--\' + stateMeta.tone">{{ stateMeta.label }}</span>' +
+                '<section class="incident-reading" aria-label="Lecture de l’incident">' +
+                    '<p><span>État actuel</span><span class="status-badge" :class="\'status-badge--\' + stateMeta.tone">{{ stateMeta.label }}</span></p>' +
+                    '<p><span>Dernière action</span><strong>{{ lastActionText }}</strong></p>' +
+                    '<p><span>Prochaine transition autorisée</span><strong>{{ nextTransitionText }}</strong></p>' +
+                '</section>' +
+                '<section class="transition-history" aria-labelledby="incident-history-title">' +
+                    '<h3 id="incident-history-title">Historique</h3>' +
+                    '<ol v-if="detail.history.length"><li v-for="item in detail.history" :key="item.history_id"><time>{{ formatDateTime(item.changed_at) }}</time> - {{ incidentMeta(item.from_state).label }} vers {{ incidentMeta(item.to_state).label }} par {{ item.actor }}<span v-if="item.reason"> : {{ item.reason }}</span></li></ol>' +
+                    '<p v-else class="empty-inline">Aucune transition enregistrée.</p>' +
+                '</section>' +
                 '<dl class="detail-grid">' +
                     '<dt>Signature</dt><dd>{{ incident.error_signature || \'Non disponible\' }}</dd>' +
                     '<dt>Clause</dt><dd>{{ incident.clause_id || \'Non disponible\' }}</dd>' +
@@ -127,11 +157,6 @@
                         '<ui-button type="submit" :disabled="!actor.trim() || !resolutionComment.trim()" :loading="busy">Enregistrer la résolution</ui-button>' +
                     '</form>' +
                 '</div>' +
-                '<section class="transition-history" aria-labelledby="incident-history-title">' +
-                    '<h3 id="incident-history-title">Historique</h3>' +
-                    '<ol v-if="detail.history.length"><li v-for="item in detail.history" :key="item.history_id"><time>{{ formatDateTime(item.changed_at) }}</time> - {{ incidentMeta(item.from_state).label }} vers {{ incidentMeta(item.to_state).label }} par {{ item.actor }}<span v-if="item.reason"> : {{ item.reason }}</span></li></ol>' +
-                    '<p v-else class="empty-inline">Aucune transition enregistrée.</p>' +
-                '</section>' +
                 '<section class="transition-history" aria-labelledby="incident-actions-title">' +
                     '<h3 id="incident-actions-title">Journal opérateur</h3>' +
                     '<ol v-if="detail.actions.length"><li v-for="item in detail.actions" :key="item.action_id"><time>{{ formatDateTime(item.created_at) }}</time> - {{ item.actor }} : {{ item.comment || item.kind }}</li></ol>' +

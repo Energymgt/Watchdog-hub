@@ -67,7 +67,7 @@ describe('workspace UI Events', () => {
         assert.match(store, /selectedEvent/);
         assert.match(store, /timestamp/);
         assert.match(store, /resetFilters/);
-        assert.match(page, /Events Workspace/);
+        assert.match(page, /<h2>Événements<\/h2>/);
         assert.match(page, /Chargement des événements/);
         assert.match(page, /Aucun événement disponible/);
         assert.match(page, /events-search/);
@@ -75,9 +75,13 @@ describe('workspace UI Events', () => {
         assert.match(page, /formatPayload/);
         assert.match(page, /select-flow/);
         assert.match(page, /event-detail--empty/);
-        assert.match(page, /Fermer le détail Event/);
+        assert.match(page, /Fermer le détail de l’événement/);
         assert.match(page, /payload/);
         assert.match(app, /createEventsStore/);
+        const exposed = app.slice(app.lastIndexOf('return {'), app.indexOf('template:'));
+        assert.match(exposed, /selectEvent:/);
+        assert.match(exposed, /loadEvents:/);
+        assert.match(exposed, /selectEventFlow:/);
         assert.match(app, /createEventsUibuilderClient/);
         assert.match(app, /state.view === 'events'/);
         assert.match(app, /eventsStore\.state\.selectedEvent/);
@@ -87,5 +91,32 @@ describe('workspace UI Events', () => {
         assert.doesNotMatch(page, /severity|latence|débit|SLA|anomalies liées|incidents liés/);
         assert.doesNotMatch(page, /FLOW_RECOVERED|CRITICAL|HIGH|MEDIUM|LOW/);
         assert.doesNotMatch(page, /#anomalies|#incidents/);
+    });
+
+    it('ouvre la vue events et relie un événement à son flux sans perdre le this', () => {
+        const context = {
+            window: {
+                WatchdogHub: {
+                    formatters: { formatDateTime: function () { return ''; } }
+                }
+            }
+        };
+        vm.createContext(context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'store/fleet-store.js'), 'utf8'), context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/events/events-page.js'), 'utf8'), context);
+
+        const store = context.window.WatchdogHub.createFleetStore({
+            reactive: function (state) { return state; }
+        });
+        store.setView('events');
+        assert.equal(store.state.view, 'events');
+        store.setView('inconnue');
+        assert.equal(store.state.view, 'overview');
+
+        const selected = context.window.WatchdogHub.components.EventsPage.computed.selectedFlow.call({
+            state: { selectedEvent: { event_id: 'EVT-1', flow_id: 'METEO_01' } },
+            flows: [{ flow_id: 'METEO_01', name: 'Météo' }]
+        });
+        assert.equal(selected.flow_id, 'METEO_01');
     });
 });

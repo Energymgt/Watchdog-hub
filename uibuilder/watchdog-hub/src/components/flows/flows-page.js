@@ -16,31 +16,34 @@
             events: { type: Array, default: function () { return []; } }
         },
         computed: {
-            normalizedQuery: function () {
-                return this.state.query.trim().toLocaleLowerCase('fr-FR');
+            activeQuery: function () {
+                var value = this.section === 'incidents' ? this.state.incidentQuery : this.state.flowQuery;
+                return value || '';
             },
             filteredFlows: function () {
-                var self = this;
+                var query = String(this.state.flowQuery || '').trim().toLocaleLowerCase('fr-FR');
+                var statusFilter = this.state.flowStatusFilter || 'all';
                 return this.state.flows.filter(function (flow) {
-                    var statusOk = self.state.statusFilter === 'all' || flow.status === self.state.statusFilter;
+                    var statusOk = statusFilter === 'all' || flow.status === statusFilter;
                     var haystack = [flow.flow_id, flow.name, flow.source_id, flow.connector_id, flow.destination_id]
                         .join(' ').toLocaleLowerCase('fr-FR');
-                    return statusOk && (!self.normalizedQuery || haystack.indexOf(self.normalizedQuery) !== -1);
+                    return statusOk && (!query || haystack.indexOf(query) !== -1);
                 }).slice().sort(function (a, b) {
                     var rank = formatters.flowStatusMeta(b.status).rank - formatters.flowStatusMeta(a.status).rank;
                     return rank || a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
                 });
             },
             filteredIncidents: function () {
-                var self = this;
+                var query = String(this.state.incidentQuery || '').trim().toLocaleLowerCase('fr-FR');
+                var incidentStateFilter = this.state.incidentStateFilter || 'active';
                 return this.state.incidents.filter(function (incident) {
-                    var stateOk = self.state.incidentStateFilter === 'all'
-                        || (self.state.incidentStateFilter === 'active'
+                    var stateOk = incidentStateFilter === 'all'
+                        || (incidentStateFilter === 'active'
                             && incident.state !== 'RESOLU' && incident.state !== 'CLOS')
-                        || incident.state === self.state.incidentStateFilter;
+                        || incident.state === incidentStateFilter;
                     var haystack = [incident.incident_id, incident.flow_id, incident.error_signature, incident.correlation_key]
                         .join(' ').toLocaleLowerCase('fr-FR');
-                    return stateOk && (!self.normalizedQuery || haystack.indexOf(self.normalizedQuery) !== -1);
+                    return stateOk && (!query || haystack.indexOf(query) !== -1);
                 }).slice().sort(function (a, b) {
                     return (new Date(b.opened_at).getTime() || 0) - (new Date(a.opened_at).getTime() || 0);
                 });
@@ -54,10 +57,18 @@
         },
         methods: {
             formatDateTime: global.WatchdogHub.formatters.formatDateTime,
+            setQuery: function (value) {
+                if (this.section === 'incidents') this.state.incidentQuery = value;
+                else this.state.flowQuery = value;
+            },
             resetFilters: function () {
-                this.state.query = '';
-                this.state.statusFilter = 'all';
-                this.state.incidentStateFilter = 'active';
+                if (this.section === 'incidents') {
+                    this.state.incidentQuery = '';
+                    this.state.incidentStateFilter = 'active';
+                    return;
+                }
+                this.state.flowQuery = '';
+                this.state.flowStatusFilter = 'all';
             },
             forwardSelection: function (incident, opener) {
                 this.$emit('select-incident', incident, opener);
@@ -76,12 +87,12 @@
                 '<state-panel v-if="state.loading && !state.snapshot" kind="loading" title="Chargement des flux" message="Lecture du registre Watchdog..." :busy="true"></state-panel>' +
                 '<state-panel v-else-if="!state.snapshot" kind="error" title="Flux indisponibles" :message="state.lastError || \'Aucune donnée Flux n’a été reçue.\'" action-label="Réessayer" @retry="$emit(\'retry\')"></state-panel>' +
                 '<template v-else>' +
-                    '<div class="flows-hero"><div><p class="eyebrow">Registre opérationnel</p><h2>{{ section === \'incidents\' ? \'Incidents\' : (section === \'flows\' ? \'Flux supervisés\' : \'Flux et incidents\') }}</h2><p>État calculé par les contrats de santé Watchdog.</p></div><small>Dernière lecture : {{ formatDateTime(state.snapshot.generatedAt) }}</small></div>' +
-                    '<flows-kpis :summary="state.summary" :loading="state.refreshing"></flows-kpis>' +
-                    '<flows-filter-bar :query="state.query" :status="state.statusFilter" :incident-state="state.incidentStateFilter" :refreshing="state.refreshing" @update:query="state.query = $event" @update:status="state.statusFilter = $event" @update:incident-state="state.incidentStateFilter = $event" @refresh="$emit(\'refresh\')" @reset="resetFilters"></flows-filter-bar>' +
-                    '<p class="results-summary"><template v-if="section !== \'incidents\'">{{ filteredFlows.length }} flux</template><template v-if="section === \'all\'"> et </template><template v-if="section !== \'flows\'">{{ filteredIncidents.length }} incident{{ filteredIncidents.length > 1 ? \'s\' : \'\' }}</template> affiché<span v-if="filteredFlows.length + filteredIncidents.length > 1">s</span>.</p>' +
+                    '<div class="flows-hero workspace-header"><div class="workspace-header__titles"><p class="eyebrow">Supervision</p><h2>{{ section === \'incidents\' ? \'Incidents\' : \'Flux métier\' }}</h2><p class="workspace-header__lead">{{ section === \'incidents\' ? \'État actuel, dernière action et transition autorisée dans le détail.\' : \'Nom, état calculé, justification et problèmes associés. La chaîne source et destination reste dans le détail.\' }}</p></div><small class="workspace-header__meta">Dernière lecture : {{ formatDateTime(state.snapshot.generatedAt) }}</small></div>' +
+                    '<flows-kpis v-if="section !== \'incidents\'" :summary="state.summary" :loading="state.refreshing"></flows-kpis>' +
+                    '<flows-filter-bar :section="section" :query="activeQuery" :status="state.flowStatusFilter" :incident-state="state.incidentStateFilter" :refreshing="state.refreshing" @update:query="setQuery" @update:status="state.flowStatusFilter = $event" @update:incident-state="state.incidentStateFilter = $event" @refresh="$emit(\'refresh\')" @reset="resetFilters"></flows-filter-bar>' +
+                    '<p class="results-summary results-bar"><template v-if="section !== \'incidents\'">{{ filteredFlows.length }} flux</template><template v-if="section === \'all\'"> et </template><template v-if="section !== \'flows\'">{{ filteredIncidents.length }} incident{{ filteredIncidents.length > 1 ? \'s\' : \'\' }}</template> affiché<span v-if="filteredFlows.length + filteredIncidents.length > 1">s</span>.</p>' +
                     '<ui-banner v-if="section !== \'incidents\' && unknownBecauseNoEvents" kind="info"><strong>État non déterminable.</strong> Aucun événement de santé reçu. Les états opérationnels ne peuvent pas encore être confirmés.</ui-banner>' +
-                    '<div v-if="section !== \'incidents\'" class="flow-workspace"><flow-list :flows="filteredFlows" :refreshing="state.refreshing" @show-incidents="$emit(\'show-incidents\', $event)" @select="$emit(\'select-flow\', $event)"></flow-list><flow-detail :flow="selectedFlow" :rules="state.rules" :incidents="state.incidents" :anomalies="anomalies" :events="events" @select-incident="forwardSelection" @select-anomaly="forwardAnomaly" @select-event="forwardEvent"></flow-detail></div>' +
+                    '<div v-if="section !== \'incidents\'" class="flow-workspace"><flow-list :flows="filteredFlows" :incidents="state.incidents" :anomalies="anomalies" :refreshing="state.refreshing" @show-incidents="$emit(\'show-incidents\', $event)" @select="$emit(\'select-flow\', $event)"></flow-list><flow-detail :flow="selectedFlow" :rules="state.rules" :incidents="state.incidents" :anomalies="anomalies" :events="events" @close="$emit(\'select-flow\', null)" @select-incident="forwardSelection" @select-anomaly="forwardAnomaly" @select-event="forwardEvent"></flow-detail></div>' +
                     '<incident-list v-if="section !== \'flows\'" :incidents="filteredIncidents" :refreshing="state.refreshing" @select="forwardSelection"></incident-list>' +
                 '</template>' +
             '</div>'

@@ -18,6 +18,13 @@ const {
 const { publicActionRow, recordAction } = require('./actions');
 const { publicResolutionRow, recordResolution } = require('./resolutions');
 const { decorateFlow } = require('./flow-status');
+const {
+    publicAlertRow,
+    applyDeviceTransitions,
+    acknowledgeAlert,
+    alertDetail
+} = require('./alerts');
+const { rememberWebhook, runDispatch, startDeliveryScheduler } = require('./alert-delivery');
 
 const MAX_BODY_BYTES = 65536;
 const SCHEMA = JSON.parse(
@@ -65,6 +72,36 @@ function parseIncidentRoute(pathname) {
     };
 }
 
+function parseAlertStatus(url) {
+    const raw = url.searchParams.get('status');
+    if (raw === null || raw === '') return undefined;
+    if (raw === 'open' || raw === 'acknowledged' || raw === 'closed' || raw === 'active') return raw;
+    return null;
+}
+
+function parseAlertId(pathname, suffix) {
+    let rest = pathname.slice('/v1/alerts/'.length);
+    if (suffix) {
+        if (!rest.endsWith(suffix)) return '';
+        rest = rest.slice(0, -suffix.length);
+    }
+    let id = '';
+    try {
+        id = decodeURIComponent(rest);
+    } catch {
+        return '';
+    }
+    if (!id || id.includes('/') || id.length > 80 || rest.includes('/')) return '';
+    return id;
+}
+
+function channelSecret(req) {
+    const header = req.headers['x-watchdog-channel-secret'];
+    if (header == null) return '';
+    const value = Array.isArray(header) ? header[0] : header;
+    return String(value || '').trim();
+}
+
 function extractIngestToken(req) {
     const header = req.headers['x-watchdog-token'];
     if (header != null && String(header).trim()) {
@@ -105,6 +142,41 @@ function createIngestServer(registry, options = {}) {
     const ingestToken = String(
         options.token !== undefined ? options.token : (process.env.WATCHDOG_INGEST_TOKEN || '')
     ).trim();
+    const deliveryOptions = options.delivery || {};
+
+    async function readJson(req, res) {
+        const contentType = String(req.headers['content-type'] || '');
+        if (!contentType.toLowerCase().startsWith('application/json')) {
+            sendJson(res, 415, { ok: false, error: 'unsupported_media_type' });
+            return undefined;
+        }
+        let raw;
+        try {
+            raw = await readBody(req, MAX_BODY_BYTES);
+        } catch (err) {
+            if (err && err.code === 'PAYLOAD_TOO_LARGE') {
+                sendJson(res, 413, { ok: false, error: 'payload_too_large' });
+                return undefined;
+            }
+            throw err;
+        }
+        try {
+            return JSON.parse(raw.toString('utf8'));
+        } catch {
+            sendJson(res, 400, { ok: false, error: 'invalid_json' });
+            return undefined;
+        }
+    }
+
+    function deliveryContext(secret) {
+        if (secret) rememberWebhook(secret);
+        return {
+            webhookUrl: secret,
+            transport: deliveryOptions.transport,
+            timeoutMs: deliveryOptions.timeoutMs,
+            channel: deliveryOptions.channel
+        };
+    }
     return http.createServer(async (req, res) => {
         const url = new URL(req.url || '/', 'http://watchdog.local');
         const method = req.method || 'GET';
@@ -410,6 +482,86 @@ function createIngestServer(registry, options = {}) {
                 return;
             }
 
+            if (method === 'GET' && url.pathname === '/v1/alerts') {
+                const limit = parseLimit(url);
+                if (limit === null) {
+                    sendJson(res, 400, { ok: false, error: 'invalid_limit' });
+                    return;
+                }
+                const status = parseAlertStatus(url);
+                if (status === null) {
+                    sendJson(res, 400, { ok: false, error: 'invalid_status' });
+                    return;
+                }
+                const alerts = registry.listAlerts({ status, limit }).map((row) => (
+                    publicAlertRow(row, registry.listAlertDeliveries(row.alert_id))
+                ));
+                sendJson(res, 200, { ok: true, alerts, summary: registry.countAlerts() });
+                return;
+            }
+
+            if (method === 'POST' && url.pathname === '/v1/alerts/device-transitions') {
+                const body = await readJson(req, res);
+                if (body === undefined) return;
+                const transitions = body && Array.isArray(body.transitions) ? body.transitions.slice(0, 100) : null;
+                if (!transitions) {
+                    sendJson(res, 400, { ok: false, error: 'invalid_transition_payload' });
+                    return;
+                }
+                const secret = channelSecret(req);
+                const results = applyDeviceTransitions(registry, transitions).map((item) => ({
+                    outcome: item.outcome,
+                    reason: item.reason || null,
+                    alert_id: item.alert ? item.alert.alert_id : null,
+                    signal_id: item.signal_id || null,
+                    duplicate: Boolean(item.duplicate)
+                }));
+                await runDispatch(registry, deliveryContext(secret));
+                sendJson(res, 202, { ok: true, results });
+                return;
+            }
+
+            if (method === 'POST' && url.pathname === '/v1/alerts/dispatch') {
+                req.resume();
+                const secret = channelSecret(req);
+                const summary = await runDispatch(registry, deliveryContext(secret));
+                sendJson(res, 200, { ok: true, summary });
+                return;
+            }
+
+            if (method === 'POST' && url.pathname.startsWith('/v1/alerts/') && url.pathname.endsWith('/ack')) {
+                const alertId = parseAlertId(url.pathname, '/ack');
+                if (!alertId) {
+                    sendJson(res, 404, { ok: false, error: 'not_found' });
+                    return;
+                }
+                const body = await readJson(req, res);
+                if (body === undefined) return;
+                const recorded = acknowledgeAlert(registry, alertId, body && body.actor);
+                if (!recorded.ok) {
+                    sendJson(res, recorded.status, { ok: false, error: recorded.error });
+                    return;
+                }
+                const detail = alertDetail(registry, alertId);
+                sendJson(res, 200, Object.assign({ ok: true, duplicate: Boolean(recorded.duplicate) }, detail));
+                return;
+            }
+
+            if (method === 'GET' && url.pathname.startsWith('/v1/alerts/')) {
+                const alertId = parseAlertId(url.pathname);
+                if (!alertId || alertId === 'device-transitions' || alertId === 'dispatch') {
+                    sendJson(res, 404, { ok: false, error: 'not_found' });
+                    return;
+                }
+                const detail = alertDetail(registry, alertId);
+                if (!detail) {
+                    sendJson(res, 404, { ok: false, error: 'not_found', alert_id: alertId });
+                    return;
+                }
+                sendJson(res, 200, Object.assign({ ok: true }, detail));
+                return;
+            }
+
             if (method === 'POST' && url.pathname === '/v1/events') {
                 const contentType = String(req.headers['content-type'] || '');
                 if (!contentType.toLowerCase().startsWith('application/json')) {
@@ -470,7 +622,16 @@ function listenIngestServer(options = {}) {
     const bind = options.host || process.env.WATCHDOG_INGEST_BIND || '127.0.0.1';
     const registry = openRegistry(dbPath);
     const server = createIngestServer(registry, {
-        token: options.token !== undefined ? options.token : process.env.WATCHDOG_INGEST_TOKEN
+        token: options.token !== undefined ? options.token : process.env.WATCHDOG_INGEST_TOKEN,
+        delivery: options.delivery
+    });
+    const stopDelivery = startDeliveryScheduler(registry, Object.assign({
+        intervalMs: 2000,
+        reconcileAll: true
+    }, options.delivery || {}));
+    server.on('close', stopDelivery);
+    runDispatch(registry, Object.assign({ reconcileAll: true }, options.delivery || {})).catch(() => {
+        /* reprise tracée en base */
     });
     return new Promise((resolve, reject) => {
         server.on('error', reject);

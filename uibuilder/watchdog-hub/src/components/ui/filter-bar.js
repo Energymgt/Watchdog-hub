@@ -83,6 +83,7 @@
                     '<ui-field label="État" extra-class="select-field">' +
                         '<select :value="status" @change="$emit(\'update:status\', $event.target.value)">' +
                             '<option value="all">Tous les états</option>' +
+                            '<option value="alerts">En alerte (tous défauts)</option>' +
                             '<option value="ok">Opérationnel</option>' +
                             '<option value="cloud_down">Cloud indisponible</option>' +
                             '<option value="unknown_online">Absent de Balena</option>' +

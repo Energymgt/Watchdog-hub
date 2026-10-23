@@ -33,7 +33,7 @@
             now: { type: Number, default: Date.now }
         },
         data: function () {
-            return { form: emptyForm(), dirty: false };
+            return { form: emptyForm(), dirty: false, errorBeforeSave: null };
         },
         watch: {
             admin: {
@@ -41,6 +41,13 @@
                 handler: function () {
                     if (!this.dirty) this.hydrate();
                 }
+            },
+            saving: function (saving, previous) {
+                if (!previous || saving) return;
+                var failed = Boolean(this.error) && this.error !== this.errorBeforeSave;
+                this.errorBeforeSave = null;
+                this.dirty = failed;
+                if (!failed) this.hydrate();
             }
         },
         mounted: function () {
@@ -65,6 +72,10 @@
             teamsTone: function () {
                 if (!this.teams.configured) return 'unknown';
                 return this.sourceStatus.teams && this.sourceStatus.teams.lastError ? 'heartbeat_missing' : 'ok';
+            },
+            teamsStatusLabel: function () {
+                if (!this.teams.configured) return 'À configurer';
+                return this.sourceStatus.teams && this.sourceStatus.teams.lastError ? 'Erreur' : 'Connecté';
             },
             mqttTone: function () {
                 return this.sourceStatus.mqtt && this.sourceStatus.mqtt.ok ? 'ok' : 'heartbeat_missing';
@@ -104,7 +115,7 @@
             },
             save: function () {
                 if (this.saving || Object.keys(this.validationErrors).length) return;
-                this.dirty = false;
+                this.errorBeforeSave = this.error || '';
                 this.$emit('save', {
                     fleetName: this.form.fleetName,
                     balenaAppId: this.form.balenaAppId,
@@ -132,15 +143,16 @@
             '<section class="admin-page" aria-labelledby="admin-title">' +
                 '<div class="admin-hero">' +
                     '<div>' +
-                        '<p class="eyebrow">Console</p>' +
-                        '<h2 id="admin-title">Administration</h2>' +
-                        '<p class="admin-lead">Connectez les sources, enrôlez une gateway, ajustez les seuils déjà documentés. Les secrets ne sont jamais renvoyés en clair.</p>' +
+                        '<p class="eyebrow">Configuration</p>' +
+                        '<h2 id="admin-title">Configuration</h2>' +
+                        '<p class="admin-lead">Connexions, seuils et appareils pré-enregistrés. Les secrets ne sont jamais renvoyés en clair : un champ vide conserve la valeur enregistrée.</p>' +
                     '</div>' +
                     '<ui-button @click="$emit(\'open-enroll\', $event)">Connecter un appareil</ui-button>' +
                 '</div>' +
                 '<ui-banner kind="warning">Cette vue configure les intégrations et paramètres Fleet. Les variables Portainer restent le repli si un champ UI est vide.</ui-banner>' +
                 '<ui-banner v-if="notice" kind="success">{{ notice }}</ui-banner>' +
                 '<ui-banner v-if="error" kind="error">Configuration non enregistrée : {{ error }}</ui-banner>' +
+                '<h3 class="admin-group-title">Connexions</h3>' +
                 '<div class="integration-grid">' +
                     '<article class="integration-card">' +
                         '<div class="integration-card__head">' +
@@ -174,7 +186,7 @@
                     '<article class="integration-card">' +
                         '<div class="integration-card__head">' +
                             '<h3>Microsoft Teams</h3>' +
-                            '<status-badge :state="teamsTone" :label="teams.configured ? (teams.urlHint || \'Connecté\') : \'À configurer\'"></status-badge>' +
+                            '<status-badge :state="teamsTone" :label="teamsStatusLabel"></status-badge>' +
                         '</div>' +
                         '<p>Webhook Workflows. Les alertes suivent toujours la règle anti-flap existante.</p>' +
                         '<ui-field label="URL webhook" extra-class="admin-field" :hint="teams.configured ? \'Laisser vide pour conserver l’URL actuelle.\' : \'URL HTTPS logic.azure.com\'">' +
@@ -183,9 +195,10 @@
                         '<ui-button variant="secondary" :disabled="!teams.configured && !form.teamsWebhookUrl" @click="$emit(\'test-teams\')">Tester l’intégration</ui-button>' +
                     '</article>' +
                 '</div>' +
+                '<h3 class="admin-group-title">Seuils</h3>' +
                 '<article class="integration-card">' +
                     '<div class="integration-card__head"><h3>Identité et seuils</h3></div>' +
-                    '<p>Valeurs actuelles du flow (grâce 5 min, 2 polls, TTL 30 j). Les modifier ici ne change pas la machine d’états, seulement les constantes.</p>' +
+                    '<p>Ces seuils alimentent la machine d’états déjà en place : grâce hors ligne, nombre de polls avant alerte Teams et rétention des heartbeats.</p>' +
                     '<div class="admin-settings">' +
                         '<ui-field label="Nom de la flotte" extra-class="admin-field" :error="validationErrors.fleetName">' +
                             '<input :value="form.fleetName" maxlength="80" required :aria-invalid="Boolean(validationErrors.fleetName)" @input="markDirty(); form.fleetName = $event.target.value">' +
@@ -216,6 +229,7 @@
                         '<ui-button :loading="saving" :disabled="saving || !dirty || Object.keys(validationErrors).length > 0" @click="save">{{ saving ? \'Enregistrement…\' : \'Enregistrer\' }}</ui-button>' +
                     '</div>' +
                 '</article>' +
+                '<h3 class="admin-group-title">Inventaire manuel</h3>' +
                 '<article class="integration-card">' +
                     '<div class="integration-card__head">' +
                         '<h3>Appareils pré-enregistrés</h3>' +

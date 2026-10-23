@@ -19,7 +19,7 @@ describe('Fleet Command Center', () => {
         const list = read('components/fleet/device-list.js');
         const filters = read('components/ui/filter-bar.js');
 
-        assert.match(app, /Fleet Command Center/);
+        assert.match(app, /Appareils surveillés/);
         assert.match(app, /fleet_snapshot_get|requestSnapshot/);
         assert.match(app, /fleet-activity/);
         assert.match(app, /recentTransitions/);
@@ -32,10 +32,15 @@ describe('Fleet Command Center', () => {
         assert.match(detail, /device\.indicators\.mqtt/);
         assert.match(detail, /device\.indicators\.buffer/);
         assert.match(formatters, /source\.device && source\.device\.protocol/);
-        assert.match(list, /Service terrain/);
+        assert.match(list, /Heartbeat/);
+        assert.match(list, /Détail/);
+        assert.doesNotMatch(list, /<th scope="col">Service terrain/);
+        assert.match(detail, /Service terrain/);
         assert.match(filters, /Service terrain/);
         assert.match(detail, /Dernière lecture Modbus/);
         assert.match(detail, /Erreur Modbus récente/);
+        assert.match(detail, /File Modbus/);
+        assert.match(detail, /Store and Forward/);
         assert.match(detail, /Node-RED/);
         assert.match(detail, /device\.mqtt\.status/);
         assert.match(detail, /device\.buffer\.detail/);
@@ -58,5 +63,17 @@ describe('Fleet Command Center', () => {
         const detail = read('components/fleet/device-detail.js');
         assert.doesNotMatch(app, /gateway.*flow|device.*incident|device.*anomal/i);
         assert.doesNotMatch(detail, /flows liés|incidents liés|anomalies liées/i);
+    });
+
+    it('propose une bascule de thème accessible et locale', () => {
+        const header = read('components/fleet/fleet-header.js');
+        const css = read('index.css');
+
+        assert.match(header, /header-theme-toggle/);
+        assert.match(header, /aria-pressed/);
+        assert.match(header, /localStorage/);
+        assert.match(header, /data-theme/);
+        assert.match(css, /:root\[data-theme="light"\]/);
+        assert.match(css, /\.header-theme-toggle/);
     });
 });

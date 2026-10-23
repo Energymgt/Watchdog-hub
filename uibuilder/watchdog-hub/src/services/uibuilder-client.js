@@ -77,6 +77,15 @@
                 if (msg && msg.topic === 'events_error' && typeof handlers.onEventsError === 'function') {
                     handlers.onEventsError(msg.payload);
                 }
+                if (msg && msg.topic === 'alerts_snapshot' && typeof handlers.onAlertsSnapshot === 'function') {
+                    handlers.onAlertsSnapshot(msg.payload);
+                }
+                if (msg && msg.topic === 'alerts_detail' && typeof handlers.onAlertsDetail === 'function') {
+                    handlers.onAlertsDetail(msg.payload);
+                }
+                if (msg && msg.topic === 'alerts_error' && typeof handlers.onAlertsError === 'function') {
+                    handlers.onAlertsError(msg.payload);
+                }
             });
             client.onChange('ioConnected', function (connected) {
                 handlers.onConnection(Boolean(connected));

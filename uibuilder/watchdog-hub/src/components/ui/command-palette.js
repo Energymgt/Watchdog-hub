@@ -20,12 +20,13 @@
         computed: {
             commands: function () {
                 return [
-                    { id: 'overview', label: 'Overview', hint: 'Navigation' },
-                    { id: 'incidents', label: 'Incidents', hint: 'Navigation' },
-                    { id: 'flows', label: 'Flows', hint: 'Navigation' },
-                    { id: 'anomalies', label: 'Anomalies', hint: 'Navigation' },
-                    { id: 'events', label: 'Events', hint: 'Navigation' },
-                    { id: 'fleet', label: 'Fleet', hint: 'Navigation' },
+                    { id: 'overview', label: 'Vue d’ensemble', hint: 'Navigation' },
+                    { id: 'flows', label: 'Flux métier', hint: 'Navigation' },
+                    { id: 'fleet', label: 'Appareils', hint: 'Navigation' },
+                    { id: 'alerts', label: 'Alertes', hint: 'Notification' },
+                    { id: 'incidents', label: 'Incidents', hint: 'Problèmes' },
+                    { id: 'anomalies', label: 'Anomalies', hint: 'Problèmes' },
+                    { id: 'events', label: 'Événements', hint: 'Problèmes' },
                     { id: 'admin', label: 'Configuration', hint: 'Navigation' }
                 ];
             },

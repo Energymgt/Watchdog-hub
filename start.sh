@@ -42,9 +42,12 @@ printf 'version=%s\nimage_flow=%s\ndata_flow=%s\nforce_copy_flows=%s\n' \
   "${FORCE_COPY_FLOWS:-false}" \
   > /data/.watchdog-deployed-version
 
-mkdir -p /data/uibuilder/watchdog-hub/src
+mkdir -p /data/nodes/lib /data/uibuilder/watchdog-hub/src
 rm -rf /data/uibuilder/watchdog-hub/src
-mkdir -p /data/uibuilder/watchdog-hub/src/vendor
+mkdir -p /data/uibuilder/watchdog-hub/src/vendor /data/nodes/lib
+cp /usr/src/watchdog/runtime/nodes/fleet-transition-outbox.js /data/nodes/fleet-transition-outbox.js
+cp /usr/src/watchdog/runtime/nodes/fleet-transition-outbox.html /data/nodes/fleet-transition-outbox.html
+cp /usr/src/watchdog/runtime/fleet-outbox.js /data/nodes/lib/fleet-outbox.js
 cp -R /usr/src/watchdog/uibuilder/watchdog-hub/src/. /data/uibuilder/watchdog-hub/src/
 cp /usr/src/node-red/node_modules/vue/dist/vue.global.prod.js \
   /data/uibuilder/watchdog-hub/src/vendor/vue.global.prod.js
@@ -52,6 +55,7 @@ cp /usr/src/node-red/node_modules/vue/dist/vue.global.prod.js \
 chown -R node-red:node-red /data
 
 export WATCHDOG_REGISTRY_PATH="${WATCHDOG_REGISTRY_PATH:-/data/watchdog-registry.sqlite}"
+export WATCHDOG_OUTBOX_PATH="${WATCHDOG_OUTBOX_PATH:-/data/fleet-transition-outbox.jsonl}"
 export WATCHDOG_INGEST_PORT="${WATCHDOG_INGEST_PORT:-8091}"
 export WATCHDOG_INGEST_BIND="${WATCHDOG_INGEST_BIND:-0.0.0.0}"
 export WATCHDOG_INGEST_TOKEN="${WATCHDOG_INGEST_TOKEN:-}"

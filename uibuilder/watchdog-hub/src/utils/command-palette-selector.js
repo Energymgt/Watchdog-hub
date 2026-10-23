@@ -80,6 +80,18 @@
                 [device.uuid, device.detail, device.state].join(' ')
             ));
         });
+        (sources.alerts || []).forEach(function (alert) {
+            items.push(item(
+                'ALERT',
+                alert.alert_id,
+                alert.subject_name || alert.alert_id,
+                [alert.plan, alert.status, alert.severity].filter(Boolean).join(' · '),
+                alert.status,
+                { view: 'alerts', alertId: alert.alert_id },
+                alert.subject_name || alert.alert_id,
+                [alert.alert_id, alert.flow_id, alert.source_id, alert.detail, alert.status].join(' ')
+            ));
+        });
         return items;
     }
 

@@ -174,8 +174,11 @@ describe('contrat UI Flux et incidents', () => {
 
         assert.match(page, /flow-workspace/);
         assert.match(page, /flow-detail/);
-        assert.match(list, /Source → Destination/);
+        assert.match(list, /Problèmes/);
         assert.match(list, /status_reason/);
+        assert.doesNotMatch(list, /Source → Destination/);
+        assert.match(detail, /Source/);
+        assert.match(detail, /Destination/);
         assert.doesNotMatch(list, /<th scope="col">Connecteur/);
         assert.match(detail, /Pourquoi \?/);
         assert.match(detail, /Chaîne supervisée/);

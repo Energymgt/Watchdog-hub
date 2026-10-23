@@ -1,0 +1,41 @@
+{
+  "flow_id": "METEO_STAT_DAILY",
+  "version": 1,
+  "name": "Statistiques quotidiennes Genève",
+  "source_id": "SRC_SQLSERVER_METEO",
+  "connector_id": "CONN_DJU_DAILY",
+  "destination_id": "DST_SQL_GENEVE_METEO_STAT",
+  "health_contract": {
+    "clauses": [
+      {
+        "id": "availability",
+        "kind": "event_failure",
+        "event_types": [
+          "connector_error",
+          "destination_error",
+          "execution_failed",
+          "validation_failed"
+        ],
+        "success_types": [
+          "execution_completed"
+        ],
+        "note": "Écart à un événement d'échec déjà reçu. Aucune clause de fraîcheur. Aucune exécution obligatoire à heure fixe. data_missing est porté par la clause source_completeness."
+      },
+      {
+        "id": "source_completeness",
+        "kind": "event_failure",
+        "event_types": [
+          "data_missing"
+        ],
+        "open_statuses": [
+          "partial"
+        ],
+        "success_types": [
+          "execution_completed"
+        ],
+        "error_signature": "source_data_incomplete",
+        "note": "Journée source incomplète sur le passage. Ce n'est pas une panne du worker. Signature stable du flux, sans date. Fermeture sur execution_completed lorsque toutes les journées closes du passage sont confirmées. Le payload n'identifie pas chaque journée."
+      }
+    ]
+  }
+}

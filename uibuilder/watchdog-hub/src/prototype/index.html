@@ -1,0 +1,1889 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <title>Watchdog Hub — Prototype Interface v2.1 (Cockpit + NOC)</title>
+    <script>
+        (function () {
+            var theme = 'dark';
+            try {
+                var saved = localStorage.getItem('watchdog-theme');
+                if (saved === 'dark' || saved === 'light') theme = saved;
+            } catch (error) {
+                theme = 'dark';
+            }
+            document.documentElement.setAttribute('data-theme', theme);
+            document.documentElement.style.colorScheme = theme;
+        }());
+    </script>
+    <link rel="stylesheet" href="./prototype.css">
+</head>
+<body>
+    <a class="skip-link" href="#main-content">Aller au contenu principal</a>
+    <div id="app">
+        <noscript>JavaScript doit être activé pour afficher le prototype Watchdog Hub.</noscript>
+    </div>
+
+    <script type="text/x-template" id="watchdog-prototype-template">
+        <div class="app-shell">
+            <!-- ==============================================================
+                 BARRE DE SIMULATION PROTOTYPE & ROUTEUR CANONIQUE ÉDITABLE
+                 ============================================================== -->
+            <aside class="proto-lab-bar" aria-label="Barre de contrôle du prototype et adresse canonique">
+                <form class="proto-url-form" @submit.prevent="submitCustomUrlBar">
+                    <span class="proto-badge">Prototype v2.1 · A+B</span>
+                    <button type="button" class="btn btn--xs" title="Retour intelligent (historique ou liste parente)" @click="smartBack">← Retour</button>
+                    <button type="button" class="btn btn--xs" title="Avancer navigateur (history.forward)" @click="goForwardBrowser">Avancer →</button>
+                    <div class="proto-url-input-wrap">
+                        <label for="proto-canonical-url-input" class="proto-url-prefix">URL :</label>
+                        <input
+                            id="proto-canonical-url-input"
+                            v-model="urlBarInput"
+                            type="text"
+                            class="proto-url-input"
+                            spellcheck="false"
+                            aria-label="Adresse canonique éditable"
+                        >
+                        <span v-if="inspected && inspected.state === 'found'" class="status-badge status-badge--ok status-badge--compact">200 {{ inspected.kindLabel }}</span>
+                        <span v-else-if="inspected && inspected.state === 'unavailable'" class="status-badge status-badge--warning status-badge--compact">503 Relevé absent</span>
+                        <span v-else-if="inspected && inspected.state === 'not_found'" class="status-badge status-badge--critical status-badge--compact">404 Introuvable</span>
+                    </div>
+                    <button type="submit" class="btn btn--xs">Aller</button>
+                    <button type="button" class="btn btn--xs" @click="copyCanonicalUrl">{{ copyUrlFeedback || 'Copier' }}</button>
+                    <button type="button" class="btn btn--xs" title="Tester un lien profond vers un objet inexistant" @click="trigger404Demo">Test 404</button>
+                    <button type="button" class="btn btn--xs" title="Tester une route inconnue redirigée vers #overview" @click="triggerUnknownRouteDemo">Test route inconnue</button>
+                </form>
+
+                <div class="proto-scenarios" role="group" aria-label="Scénarios de simulation">
+                    <span class="proto-scenarios__label">État simulé :</span>
+                    <button type="button" class="proto-chip" :class="{ 'proto-chip--active': scenario === 'crisis' }" @click="applyScenario('crisis')">Crise réaliste</button>
+                    <button type="button" class="proto-chip" :class="{ 'proto-chip--active': scenario === 'nominal' }" @click="applyScenario('nominal')">100% Nominal</button>
+                    <button type="button" class="proto-chip" :class="{ 'proto-chip--active': scenario === 'disconnected' }" @click="applyScenario('disconnected')">Connexion coupée</button>
+                    <button type="button" class="proto-chip" :class="{ 'proto-chip--active': scenario === 'stale' }" @click="applyScenario('stale')">Relevé périmé</button>
+                    <button type="button" class="proto-chip" :class="{ 'proto-chip--active': scenario === 'missing_fleet' }" @click="applyScenario('missing_fleet')">Snapshot flotte absent</button>
+                </div>
+            </aside>
+
+            <!-- ==============================================================
+                 EN-TÊTE APPLICATION & TÉLÉMÉTRIE NOC
+                 ============================================================== -->
+            <header class="page-header" :inert="anyOverlayOpen ? true : undefined">
+                <div class="header-bar">
+                    <div class="header-identity">
+                        <span class="brand-mark" aria-hidden="true">WH</span>
+                        <div class="header-titles">
+                            <p class="header-eyebrow">Siège de supervision</p>
+                            <h1>{{ dataset.admin.fleetName }}</h1>
+                        </div>
+                    </div>
+
+                    <div class="header-telemetry-inline" aria-label="Télémétrie temps réel">
+                        <span class="status-badge" :class="connected ? 'status-badge--ok' : 'status-badge--critical'">
+                            {{ connected ? 'Canal temps réel connecté' : 'Canal hors ligne' }}
+                        </span>
+                        <span v-if="staleOverride" class="status-badge status-badge--warning">Données anciennes</span>
+                        <span class="telemetry-divider" aria-hidden="true"></span>
+                        <span class="status-badge status-badge--ok" title="API Balena Cloud : opérationnelle">Balena Cloud</span>
+                        <span class="status-badge status-badge--ok" title="Broker MQTT : réception active">Broker MQTT</span>
+                        <span class="status-badge status-badge--ok" title="Webhook Microsoft Teams : opérationnel">Teams</span>
+                        <span class="telemetry-divider" aria-hidden="true"></span>
+                        <span class="header-timestamp" :title="formatDateTime(dataset.generatedAt)">
+                            Dernier relevé : {{ formatRelative(dataset.generatedAt) }}
+                        </span>
+                    </div>
+
+                    <div class="header-actions">
+                        <button type="button" class="command-trigger" @click="openPalette">
+                            <span>Rechercher ou aller à…</span>
+                            <kbd>Ctrl K</kbd>
+                        </button>
+                        <button
+                            type="button"
+                            class="theme-toggle"
+                            :aria-label="theme === 'dark' ? 'Thème sombre actif. Passer au thème clair.' : 'Thème clair actif. Passer au thème sombre.'"
+                            @click="toggleTheme"
+                        >
+                            <span>{{ theme === 'dark' ? 'Thème sombre · Passer au clair' : 'Thème clair · Passer au sombre' }}</span>
+                        </button>
+                    </div>
+                </div>
+
+                <details class="header-telemetry-drawer">
+                    <summary>Sources, fraîcheur et cadencement des relevés</summary>
+                    <dl class="telemetry-grid">
+                        <div class="telemetry-cell">
+                            <dt>Dernier relevé reçu</dt>
+                            <dd :title="formatDateTime(dataset.generatedAt)">{{ formatRelative(dataset.generatedAt) }} ({{ formatDateTime(dataset.generatedAt) }})</dd>
+                        </div>
+                        <div class="telemetry-cell">
+                            <dt>Dernière évaluation flotte</dt>
+                            <dd>{{ formatRelative(dataset.lastEvaluationAt) }}</dd>
+                        </div>
+                        <div class="telemetry-cell">
+                            <dt>Dernier poll Balena Cloud</dt>
+                            <dd>{{ formatRelative(dataset.sourceStatus.balena.lastSuccessAt) }}</dd>
+                        </div>
+                        <div class="telemetry-cell">
+                            <dt>Dernier heartbeat MQTT</dt>
+                            <dd>{{ formatRelative(dataset.sourceStatus.mqtt.lastMessageAt) }}</dd>
+                        </div>
+                        <div class="telemetry-cell">
+                            <dt>Prochain poll estimé</dt>
+                            <dd>{{ formatRelative(dataset.nextPollAt) }}</dd>
+                        </div>
+                    </dl>
+                </details>
+            </header>
+
+            <!-- ==============================================================
+                 NAVIGATION LATÉRALE (Groupes explicites, compteurs différenciés)
+                 ============================================================== -->
+            <nav class="app-nav" aria-label="Navigation principale" :inert="anyOverlayOpen ? true : undefined">
+                <div class="app-nav__section" role="group" aria-labelledby="nav-group-watch">
+                    <p class="app-nav__heading" id="nav-group-watch">Supervision</p>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'overview' ? 'page' : undefined" @click="navigate('overview')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Vue d’ensemble</span>
+                    </button>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'flows' ? 'page' : undefined" @click="navigate('flows')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Flux métier</span>
+                        <span v-if="flowSummary.down + flowSummary.degraded > 0" class="nav-counter nav-counter--alert" :title="(flowSummary.down + flowSummary.degraded) + ' flux en défaut'">
+                            {{ flowSummary.down + flowSummary.degraded }}
+                        </span>
+                    </button>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'fleet' ? 'page' : undefined" @click="navigate('fleet')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Appareils</span>
+                        <span v-if="fleetSummary.alerts > 0" class="nav-counter nav-counter--alert" :title="fleetSummary.alerts + ' appareils en alerte'">
+                            {{ fleetSummary.alerts }}
+                        </span>
+                    </button>
+                </div>
+
+                <div class="app-nav__section" role="group" aria-labelledby="nav-group-notify">
+                    <p class="app-nav__heading" id="nav-group-notify">Notifications</p>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'alerts' ? 'page' : undefined" @click="navigate('alerts')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Alertes</span>
+                        <span v-if="openAlertsCount > 0" class="nav-counter nav-counter--alert" :title="openAlertsCount + ' alertes non acquittées'">
+                            {{ openAlertsCount }}
+                        </span>
+                    </button>
+                </div>
+
+                <!-- Audit #5 : « Problèmes & Journal » est un vrai en-tête de groupe non ambigu -->
+                <div class="app-nav__section" role="group" aria-labelledby="nav-group-problems">
+                    <p class="app-nav__heading" id="nav-group-problems">Problèmes &amp; Journal</p>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'incidents' ? 'page' : undefined" @click="navigate('incidents')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Incidents</span>
+                        <span v-if="flowSummary.incidentsActive > 0" class="nav-counter nav-counter--alert" :title="flowSummary.incidentsActive + ' incidents actifs'">
+                            {{ flowSummary.incidentsActive }}
+                        </span>
+                    </button>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'anomalies' ? 'page' : undefined" @click="navigate('anomalies')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Anomalies</span>
+                        <span v-if="openAnomaliesCount > 0" class="nav-counter nav-counter--warning" :title="openAnomaliesCount + ' anomalies ouvertes'">
+                            {{ openAnomaliesCount }}
+                        </span>
+                    </button>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'events' ? 'page' : undefined" @click="navigate('events')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Événements</span>
+                        <!-- Audit #4 : Compteur de volume neutre, distinct des compteurs d'alerte -->
+                        <span class="nav-counter nav-counter--volume" title="Volume d'événements dans le relevé">{{ dataset.events.length }}</span>
+                    </button>
+                </div>
+
+                <div class="app-nav__section app-nav__section--footer" role="group" aria-labelledby="nav-group-sys">
+                    <p class="app-nav__heading" id="nav-group-sys">Système</p>
+                    <button type="button" class="app-nav__item" :aria-current="route.view === 'admin' ? 'page' : undefined" @click="navigate('admin')">
+                        <span class="app-nav__item-label"><span class="app-nav__dot"></span>Configuration</span>
+                    </button>
+                </div>
+            </nav>
+
+            <!-- ==============================================================
+                 ZONE DE TRAVAIL PRINCIPALE (VUES OPÉRATIONNELLES NOC)
+                 ============================================================== -->
+            <main id="main-content" class="dashboard" tabindex="-1" :inert="anyOverlayOpen ? true : undefined">
+                <p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveAnnouncement }}</p>
+
+                <!-- Bannière de redirection de route inconnue -->
+                <div v-if="routeNotice" class="ui-banner ui-banner--info" role="status">
+                    <span>{{ routeNotice }}</span>
+                    <button type="button" class="btn btn--xs" @click="routeNotice = ''">Fermer</button>
+                </div>
+
+                <!-- Bannières globales de fiabilité -->
+                <div v-if="!connected" class="ui-banner ui-banner--warning" role="alert">
+                    <span><strong>Connexion temps réel interrompue.</strong> Les états affichés correspondent au dernier relevé reçu et ne sont pas confirmés en direct.</span>
+                    <button type="button" class="btn btn--xs" @click="applyScenario('crisis')">Rétablir la connexion</button>
+                </div>
+                <div v-if="staleOverride" class="ui-banner ui-banner--warning" role="status">
+                    <span><strong>Relevé des appareils périmé.</strong> Le dernier snapshot dépasse la période de grâce configurée (5 min).</span>
+                </div>
+
+                <!-- ==========================================================
+                     1. VUE D'ENSEMBLE (#overview)
+                     ========================================================== -->
+                <section v-if="route.view === 'overview'" class="view-stack" aria-labelledby="view-title-overview">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Poste de supervision</p>
+                            <h2 id="view-title-overview">Vue d’ensemble</h2>
+                            <p class="workspace-header__lead">Synthèse croisée des flux métier et des passerelles terrain, suivie de la file prioritaire d’intervention et des éléments non confirmés.</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <span>Chaque ligne ouvre le tiroir d’inspection adressable</span>
+                        </div>
+                    </div>
+
+                    <div class="health-grid" aria-label="Santé des deux plans supervisés">
+                        <!-- Plan Flux métier -->
+                        <article class="health-block" :class="'health-block--' + overviewBuilt.flows.tone">
+                            <div class="health-block__head">
+                                <h3>Flux métier</h3>
+                                <span class="status-badge" :class="'status-badge--' + overviewBuilt.flows.tone">{{ overviewBuilt.flows.label }}</span>
+                            </div>
+                            <p class="health-block__summary">{{ overviewBuilt.flows.detail }}</p>
+                            <dl v-if="overviewBuilt.flows.counts" class="health-counters">
+                                <div class="health-counter-box"><dt>Opérationnels</dt><dd>{{ overviewBuilt.flows.counts.ok }}</dd></div>
+                                <div class="health-counter-box"><dt>Dégradés</dt><dd>{{ overviewBuilt.flows.counts.degraded }}</dd></div>
+                                <div class="health-counter-box"><dt>Indisponibles</dt><dd>{{ overviewBuilt.flows.counts.down }}</dd></div>
+                                <div class="health-counter-box"><dt>Inconnus</dt><dd>{{ overviewBuilt.flows.counts.unknown }}</dd></div>
+                            </dl>
+                            <div class="health-block__foot">
+                                <span class="cell-sub">{{ flowSummary.incidentsActive }} incident(s) actif(s)</span>
+                                <button type="button" class="btn btn--xs" @click="navigate('flows')">Ouvrir les flux →</button>
+                            </div>
+                        </article>
+
+                        <!-- Plan Appareils -->
+                        <article class="health-block" :class="'health-block--' + overviewBuilt.devices.tone">
+                            <div class="health-block__head">
+                                <h3>Appareils (Passerelles BACnet &amp; Modbus)</h3>
+                                <span class="status-badge" :class="'status-badge--' + overviewBuilt.devices.tone">{{ overviewBuilt.devices.label }}</span>
+                            </div>
+                            <p class="health-block__summary">{{ overviewBuilt.devices.detail }}</p>
+                            <dl v-if="overviewBuilt.devices.counts" class="health-counters">
+                                <div class="health-counter-box"><dt>Opérationnels</dt><dd>{{ overviewBuilt.devices.counts.ok }}</dd></div>
+                                <div class="health-counter-box"><dt>À surveiller</dt><dd>{{ overviewBuilt.devices.counts.attention }}</dd></div>
+                                <div class="health-counter-box"><dt>Hors service</dt><dd>{{ overviewBuilt.devices.counts.dead }}</dd></div>
+                                <div class="health-counter-box"><dt>Inconnus</dt><dd>{{ overviewBuilt.devices.counts.unknown }}</dd></div>
+                            </dl>
+                            <div class="health-block__foot">
+                                <span class="cell-sub">{{ openAlertsCount }} alerte(s) ouverte(s)</span>
+                                <button type="button" class="btn btn--xs" @click="navigate('fleet')">Ouvrir les appareils →</button>
+                            </div>
+                        </article>
+                    </div>
+
+                    <div class="overview-Workbench">
+                        <div class="overview-column">
+                            <!-- File prioritaire « À traiter » -->
+                            <section class="panel-card" aria-labelledby="priority-heading">
+                                <div class="panel-card__head">
+                                    <h3 id="priority-heading">
+                                        À traiter en priorité (Défauts confirmés)
+                                        <span class="nav-counter" :class="overviewBuilt.attention.length ? 'nav-counter--alert' : 'nav-counter--volume'">
+                                            {{ overviewBuilt.attention.length }}
+                                        </span>
+                                    </h3>
+                                    <button type="button" class="btn btn--xs btn--ghost" @click="navigate('incidents')">Tous les incidents →</button>
+                                </div>
+                                <ol v-if="overviewBuilt.attention.length" class="priority-list">
+                                    <li
+                                        v-for="item in overviewBuilt.attention"
+                                        :key="item.key"
+                                        class="priority-item"
+                                        :class="'priority-item--' + item.tone"
+                                    >
+                                        <button
+                                            type="button"
+                                            class="priority-item__main"
+                                            @click="item.target === 'incident' ? inspectObject('incident', item.incident.incident_id) : (item.target === 'device' ? inspectObject('device', item.device.uuid) : inspectObject('flow', item.flow.flow_id))"
+                                        >
+                                            <span class="priority-item__meta">
+                                                <span class="status-badge" :class="'status-badge--' + item.tone">{{ item.stateLabel }}</span>
+                                                <strong>{{ item.kind }}</strong>
+                                                <span>· {{ item.since }}</span>
+                                                <span v-if="item.sign">· {{ item.sign }}</span>
+                                            </span>
+                                            <span class="priority-item__title">{{ item.name }}</span>
+                                            <span class="priority-item__cause">{{ item.cause }}</span>
+                                        </button>
+                                        <div class="priority-item__actions">
+                                            <button
+                                                v-if="item.target === 'incident' && item.flow"
+                                                type="button"
+                                                class="btn btn--xs"
+                                                @click="inspectObject('flow', item.flow.flow_id)"
+                                            >
+                                                Flux
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn btn--xs btn--primary"
+                                                @click="item.target === 'incident' ? inspectObject('incident', item.incident.incident_id) : (item.target === 'device' ? inspectObject('device', item.device.uuid) : inspectObject('flow', item.flow.flow_id))"
+                                            >
+                                                Inspecter
+                                            </button>
+                                        </div>
+                                    </li>
+                                </ol>
+                                <div v-else class="state-empty state-empty--flush">
+                                    <h3>Aucun défaut confirmé</h3>
+                                    <p>Aucun incident actif, flux en défaut ou passerelle hors service.</p>
+                                </div>
+                            </section>
+
+                            <!-- Section « Sans état confirmé / Inconnus » séparée des pannes -->
+                            <section v-if="overviewBuilt.review && overviewBuilt.review.length" class="panel-card" aria-labelledby="review-heading">
+                                <div class="panel-card__head">
+                                    <h3 id="review-heading">
+                                        En attente de premier signal (État inconnu)
+                                        <span class="nav-counter nav-counter--volume">{{ overviewBuilt.review.length }}</span>
+                                    </h3>
+                                </div>
+                                <ol class="priority-list">
+                                    <li v-for="item in overviewBuilt.review" :key="item.key" class="priority-item priority-item--unknown">
+                                        <button
+                                            type="button"
+                                            class="priority-item__main"
+                                            @click="item.target === 'device' ? inspectObject('device', item.device.uuid) : inspectObject('flow', item.flow.flow_id)"
+                                        >
+                                            <span class="priority-item__meta">
+                                                <span class="status-badge status-badge--unknown">Inconnu</span>
+                                                <strong>{{ item.kind }}</strong>
+                                            </span>
+                                            <span class="priority-item__title">{{ item.name }}</span>
+                                            <span class="priority-item__cause">{{ item.cause }}</span>
+                                        </button>
+                                        <div class="priority-item__actions">
+                                            <button
+                                                type="button"
+                                                class="btn btn--xs"
+                                                @click="item.target === 'device' ? inspectObject('device', item.device.uuid) : inspectObject('flow', item.flow.flow_id)"
+                                            >
+                                                Inspecter
+                                            </button>
+                                        </div>
+                                    </li>
+                                </ol>
+                            </section>
+                        </div>
+
+                        <!-- Chronologie globale (périmètre explicite — Audit #8) -->
+                        <section class="panel-card" aria-labelledby="activity-heading">
+                            <div class="panel-card__head">
+                                <h3 id="activity-heading">Chronologie inter-domaines (Flux &amp; Flotte)</h3>
+                                <span class="cell-sub">8 derniers faits</span>
+                            </div>
+                            <ol class="timeline-list">
+                                <li v-for="act in combinedActivity" :key="act.id">
+                                    <button
+                                        type="button"
+                                        class="timeline-row"
+                                        @click="act.navigation && act.navigation.incidentId ? inspectObject('incident', act.navigation.incidentId) : (act.navigation && act.navigation.flowId ? inspectObject('flow', act.navigation.flowId) : navigate(act.navigation ? act.navigation.view : 'events'))"
+                                    >
+                                        <span class="timeline-row__time">{{ formatRelative(act.timestamp) }}</span>
+                                        <span class="status-badge" :class="'status-badge--' + (act.tone || 'unknown')">{{ act.category }}</span>
+                                        <span class="timeline-row__body">
+                                            <span class="timeline-row__title">{{ act.title }}</span>
+                                            <span class="timeline-row__desc">{{ act.description }}</span>
+                                        </span>
+                                    </button>
+                                </li>
+                            </ol>
+                        </section>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     2. FLUX MÉTIER (#flows & #flows/{flowId})
+                     ========================================================== -->
+                <section v-else-if="route.view === 'flows'" class="view-stack" aria-labelledby="view-title-flows">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Supervision des chaînes</p>
+                            <h2 id="view-title-flows">Flux métier</h2>
+                            <p class="workspace-header__lead">Contrats de santé déclarés, chaîne Source → Connecteur → Destination et problèmes associés.</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <span>Dernière lecture : {{ formatDateTime(dataset.generatedAt) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="kpi-strip" role="group" aria-label="Filtrage rapide par état de flux">
+                        <button type="button" class="kpi-card" :aria-pressed="flowFilters.status === 'all' ? 'true' : 'false'" @click="flowFilters.status = 'all'">
+                            <span class="kpi-card__label">Flux supervisés</span>
+                            <span class="kpi-card__value">{{ flowSummary.total }}</span>
+                            <span class="kpi-card__sub">Tous les contrats</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--ok" :aria-pressed="flowFilters.status === 'ok' ? 'true' : 'false'" @click="flowFilters.status = 'ok'">
+                            <span class="kpi-card__label">Opérationnels</span>
+                            <span class="kpi-card__value">{{ flowSummary.ok }}</span>
+                            <span class="kpi-card__sub">État nominal confirmé</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--warning" :aria-pressed="flowFilters.status === 'degraded' ? 'true' : 'false'" @click="flowFilters.status = 'degraded'">
+                            <span class="kpi-card__label">Dégradés</span>
+                            <span class="kpi-card__value">{{ flowSummary.degraded }}</span>
+                            <span class="kpi-card__sub">Anomalie ou incident détecté</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--critical" :aria-pressed="flowFilters.status === 'down' ? 'true' : 'false'" @click="flowFilters.status = 'down'">
+                            <span class="kpi-card__label">Indisponibles</span>
+                            <span class="kpi-card__value">{{ flowSummary.down }}</span>
+                            <span class="kpi-card__sub">Incident confirmé en cours</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--unknown" :aria-pressed="flowFilters.status === 'unknown' ? 'true' : 'false'" @click="flowFilters.status = 'unknown'">
+                            <span class="kpi-card__label">Inconnus</span>
+                            <span class="kpi-card__value">{{ flowSummary.unknown }}</span>
+                            <span class="kpi-card__sub">Sans événement reçu</span>
+                        </button>
+                    </div>
+
+                    <div class="noc-toolbar" role="search" aria-label="Filtres des flux métier">
+                        <div class="noc-toolbar__fields">
+                            <div class="field-group field-group--search">
+                                <label for="flows-search-input">Rechercher un flux</label>
+                                <input id="flows-search-input" v-model="flowFilters.query" type="search" placeholder="Nom, identifiant, source, connecteur, destination…">
+                            </div>
+                            <div class="field-group">
+                                <label for="flows-status-select">État du flux</label>
+                                <select id="flows-status-select" v-model="flowFilters.status">
+                                    <option value="all">Tous les états</option>
+                                    <option value="down">Indisponible</option>
+                                    <option value="degraded">Dégradé</option>
+                                    <option value="ok">Opérationnel</option>
+                                    <option value="unknown">Inconnu</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn--ghost" @click="flowFilters.query = ''; flowFilters.status = 'all'">Réinitialiser</button>
+                    </div>
+
+                    <div class="results-bar">
+                        <span>{{ filteredFlows.length }} flux affiché(s) sur {{ dataset.flows.length }}</span>
+                        <span>Modèle d’URL canonique : <code>#flows/{flow_id}</code></span>
+                    </div>
+
+                    <div v-if="filteredFlows.length" class="table-wrap">
+                        <table class="noc-table">
+                            <caption class="sr-only">Liste des flux métier supervisés</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Flux métier</th>
+                                    <th scope="col">État calculé</th>
+                                    <th scope="col">Chaîne supervisée</th>
+                                    <th scope="col">Justification</th>
+                                    <th scope="col">Dernier fait</th>
+                                    <th scope="col">Problèmes liés</th>
+                                    <th scope="col">Inspection</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="flow in filteredFlows"
+                                    :key="flow.flow_id"
+                                    :class="[
+                                        'row--' + flowStatusMeta(flow.status).tone,
+                                        inspected && inspected.kind === 'flow' && inspected.id === flow.flow_id ? 'is-selected' : ''
+                                    ]"
+                                    @click="inspectObject('flow', flow.flow_id)"
+                                >
+                                    <td>
+                                        <span class="cell-primary">{{ flow.name }}</span>
+                                        <span class="cell-sub">{{ flow.flow_id }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge" :class="'status-badge--' + flowStatusMeta(flow.status).tone">
+                                            {{ flowStatusMeta(flow.status).label }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="pipeline-inline">
+                                            <span>{{ flow.source_id }}</span> → <span>{{ flow.connector_id }}</span> → <span>{{ flow.destination_id }}</span>
+                                        </span>
+                                    </td>
+                                    <td>{{ reasonLabel(flow.status_reason) }}</td>
+                                    <td class="mono">{{ flow.last_event_at ? formatRelative(flow.last_event_at) : 'Aucun événement' }}</td>
+                                    <td @click.stop>
+                                        <button
+                                            v-if="dataset.incidents.filter(function(i){ return i.flow_id === flow.flow_id && i.state !== 'RESOLU' && i.state !== 'CLOS'; }).length"
+                                            type="button"
+                                            class="btn btn--xs"
+                                            @click="showFlowIncidentsFromTable(flow)"
+                                        >
+                                            {{ dataset.incidents.filter(function(i){ return i.flow_id === flow.flow_id && i.state !== 'RESOLU' && i.state !== 'CLOS'; }).length }} incident(s) actif(s)
+                                        </button>
+                                        <span v-else class="cell-sub">Aucun incident actif</span>
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn--xs">Inspecter →</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div v-else class="state-empty">
+                        <h3>Aucun flux ne correspond aux filtres</h3>
+                        <button type="button" class="btn" @click="flowFilters.query = ''; flowFilters.status = 'all'">Réinitialiser les filtres</button>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     3. APPAREILS / FLOTTE (#fleet & #fleet/{uuid})
+                     ========================================================== -->
+                <section v-else-if="route.view === 'fleet'" class="view-stack" aria-labelledby="view-title-fleet">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Infrastructure terrain</p>
+                            <h2 id="view-title-fleet">Appareils supervisés</h2>
+                            <p class="workspace-header__lead">Inventaire unifié Balena Cloud et heartbeats MQTT des passerelles BACnet et Modbus. Les appareils en défaut apparaissent en tête.</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <button type="button" class="btn btn--primary" @click="enrollOpen = true">+ Connecter un appareil</button>
+                        </div>
+                    </div>
+
+                    <div v-if="fleetMissingOverride" class="state-empty">
+                        <h3>Relevé de la flotte indisponible</h3>
+                        <p>Le snapshot des appareils n’a pas été reçu. Impossible d’afficher l’état des passerelles.</p>
+                        <button type="button" class="btn btn--primary" @click="applyScenario('crisis')">Rétablir le snapshot flotte</button>
+                    </div>
+
+                    <template v-else>
+                        <!-- Audit #6 : Les 5 cartes KPI (y compris Alertes) sont des boutons interactifs -->
+                        <div class="kpi-strip" role="group" aria-label="Filtrage rapide de la flotte">
+                            <button type="button" class="kpi-card" :aria-pressed="fleetFilters.status === 'all' ? 'true' : 'false'" @click="fleetFilters.status = 'all'">
+                                <span class="kpi-card__label">Appareils totaux</span>
+                                <span class="kpi-card__value">{{ fleetSummary.total }}</span>
+                                <span class="kpi-card__sub">Inventaire complet</span>
+                            </button>
+                            <button type="button" class="kpi-card kpi-card--ok" :aria-pressed="fleetFilters.status === 'ok' ? 'true' : 'false'" @click="fleetFilters.status = 'ok'">
+                                <span class="kpi-card__label">Opérationnels</span>
+                                <span class="kpi-card__value">{{ fleetSummary.ok }}</span>
+                                <span class="kpi-card__sub">Balena + Heartbeat OK</span>
+                            </button>
+                            <button type="button" class="kpi-card kpi-card--high" :aria-pressed="fleetFilters.status === 'alerts' ? 'true' : 'false'" @click="fleetFilters.status = 'alerts'">
+                                <span class="kpi-card__label">En alerte (Tous défauts)</span>
+                                <span class="kpi-card__value">{{ fleetSummary.alerts }}</span>
+                                <span class="kpi-card__sub">Filtrer les non-nominaux</span>
+                            </button>
+                            <button type="button" class="kpi-card kpi-card--warning" :aria-pressed="fleetFilters.status === 'heartbeat_missing' ? 'true' : 'false'" @click="fleetFilters.status = 'heartbeat_missing'">
+                                <span class="kpi-card__label">Heartbeat absent</span>
+                                <span class="kpi-card__value">{{ fleetSummary.heartbeatMissing }}</span>
+                                <span class="kpi-card__sub">Âge &gt; grâce configurée</span>
+                            </button>
+                            <button type="button" class="kpi-card kpi-card--critical" :aria-pressed="fleetFilters.status === 'dead' ? 'true' : 'false'" @click="fleetFilters.status = 'dead'">
+                                <span class="kpi-card__label">Hors service</span>
+                                <span class="kpi-card__value">{{ fleetSummary.dead }}</span>
+                                <span class="kpi-card__sub">Injoignable ou erreur Modbus</span>
+                            </button>
+                        </div>
+
+                        <div class="noc-toolbar" role="search" aria-label="Filtres des appareils">
+                            <div class="noc-toolbar__fields">
+                                <div class="field-group field-group--search">
+                                    <label for="fleet-search-input">Rechercher un appareil</label>
+                                    <input id="fleet-search-input" v-model="fleetFilters.query" type="search" placeholder="Nom, UUID, protocole, diagnostic…">
+                                </div>
+                                <div class="field-group">
+                                    <label for="fleet-state-select">État calculé</label>
+                                    <select id="fleet-state-select" v-model="fleetFilters.status">
+                                        <option value="all">Tous les états</option>
+                                        <option value="alerts">Tous les défauts (Alertes)</option>
+                                        <option value="dead">Hors service</option>
+                                        <option value="heartbeat_missing">Heartbeat absent</option>
+                                        <option value="cloud_down">Cloud indisponible</option>
+                                        <option value="ok">Opérationnel</option>
+                                        <option value="unknown">Inconnu (pré-déclaré)</option>
+                                    </select>
+                                </div>
+                                <div class="field-group">
+                                    <label for="fleet-source-select">Sous-système en défaut</label>
+                                    <select id="fleet-source-select" v-model="fleetFilters.source">
+                                        <option value="all">Tous</option>
+                                        <option value="balena">Balena Cloud hors ligne</option>
+                                        <option value="heartbeat">Heartbeat MQTT périmé</option>
+                                        <option value="field">Protocole terrain (BACnet/Modbus)</option>
+                                        <option value="buffer">Buffer Store &amp; Forward</option>
+                                    </select>
+                                </div>
+                                <div class="field-group">
+                                    <label for="fleet-sort-select">Trier par</label>
+                                    <select id="fleet-sort-select" v-model="fleetFilters.sort">
+                                        <option value="severity">Sévérité décroissante</option>
+                                        <option value="name">Nom (A → Z)</option>
+                                        <option value="heartbeat">Heartbeat le plus récent</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn--ghost" @click="fleetFilters.query = ''; fleetFilters.status = 'all'; fleetFilters.source = 'all'; fleetFilters.sort = 'severity'">Réinitialiser</button>
+                        </div>
+
+                        <div class="results-bar">
+                            <span>{{ filteredDevices.length }} appareil(s) filtré(s) sur {{ dataset.devices.length }} (page {{ fleetFilters.page }}/{{ fleetTotalPages }})</span>
+                            <span>Modèle d’URL canonique : <code>#fleet/{uuid}</code></span>
+                        </div>
+
+                        <!-- Table Desktop (> 700px) -->
+                        <div v-if="pagedDevices.length" class="table-wrap table-wrap--devices">
+                            <table class="noc-table">
+                                <caption class="sr-only">Inventaire des passerelles</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Appareil &amp; UUID</th>
+                                        <th scope="col">Protocole terrain</th>
+                                        <th scope="col">État observé</th>
+                                        <th scope="col">Sous-systèmes</th>
+                                        <th scope="col">Dernier heartbeat</th>
+                                        <th scope="col">Diagnostic</th>
+                                        <th scope="col">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="dev in pagedDevices"
+                                        :key="dev.uuid"
+                                        :class="[
+                                            'row--' + stateMeta(dev.state).tone,
+                                            inspected && inspected.kind === 'device' && inspected.id === dev.uuid ? 'is-selected' : ''
+                                        ]"
+                                        @click="inspectObject('device', dev.uuid)"
+                                    >
+                                        <td>
+                                            <span class="cell-primary">{{ dev.name }}</span>
+                                            <span class="cell-sub">{{ dev.uuid.slice(0, 16) }}…</span>
+                                        </td>
+                                        <td>
+                                            <span class="tech-pill">{{ dev.protocol.toUpperCase() }}</span>
+                                        </td>
+                                        <td>
+                                            <span class="status-badge" :class="'status-badge--' + stateMeta(dev.state).tone">
+                                                {{ stateMeta(dev.state).label }}
+                                            </span>
+                                            <div v-if="dev.pendingConfirmation" class="cell-sub">
+                                                Anti-flap : {{ dev.pendingConfirmation.count }}/{{ dev.pendingConfirmation.required }} poll(s)
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="tech-pills">
+                                                <span class="tech-pill" :class="'tech-pill--' + dev.indicators.bacnet">{{ dev.protocol === 'modbus' ? 'Modbus' : 'BACnet' }}</span>
+                                                <span class="tech-pill" :class="'tech-pill--' + dev.indicators.mqtt">MQTT</span>
+                                                <span class="tech-pill" :class="'tech-pill--' + dev.indicators.buffer">Buffer</span>
+                                                <span class="tech-pill" :class="'tech-pill--' + dev.indicators.supervisor">Sup</span>
+                                            </div>
+                                        </td>
+                                        <td class="mono" :title="formatDateTime(dev.lastHeartbeat)">
+                                            {{ dev.lastHeartbeat ? formatRelative(dev.lastHeartbeat) : 'Jamais reçu' }}
+                                        </td>
+                                        <td class="cell-truncate">{{ dev.detail }}</td>
+                                        <td>
+                                            <button type="button" class="btn btn--xs">Inspecter →</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Cartes Mobile (< 700px uniquement — Audit #15) -->
+                        <div v-if="pagedDevices.length" class="device-cards">
+                            <article v-for="dev in pagedDevices" :key="dev.uuid" class="device-card">
+                                <div class="flex-between">
+                                    <strong>{{ dev.name }}</strong>
+                                    <span class="status-badge" :class="'status-badge--' + stateMeta(dev.state).tone">{{ stateMeta(dev.state).label }}</span>
+                                </div>
+                                <p class="cell-sub">{{ dev.protocol.toUpperCase() }} · {{ dev.uuid }}</p>
+                                <p>{{ dev.detail }}</p>
+                                <div class="flex-between">
+                                    <span class="cell-sub">Heartbeat : {{ dev.lastHeartbeat ? formatRelative(dev.lastHeartbeat) : 'Jamais reçu' }}</span>
+                                    <button type="button" class="btn btn--xs" @click="inspectObject('device', dev.uuid)">Inspecter →</button>
+                                </div>
+                            </article>
+                        </div>
+
+                        <!-- Pagination Flotte -->
+                        <nav v-if="filteredDevices.length" class="pagination-bar" aria-label="Pagination des appareils">
+                            <div class="flex-row-gap">
+                                <label for="fleet-pagesize-select" class="cell-sub">Taille de page :</label>
+                                <select id="fleet-pagesize-select" v-model.number="fleetFilters.pageSize">
+                                    <option :value="5">5 par page</option>
+                                    <option :value="10">10 par page</option>
+                                    <option :value="25">25 par page</option>
+                                    <option :value="50">50 par page</option>
+                                </select>
+                            </div>
+                            <div class="flex-row-gap">
+                                <button type="button" class="btn btn--xs" :disabled="fleetFilters.page <= 1" @click="fleetFilters.page -= 1">← Précédent</button>
+                                <span class="mono">Page {{ fleetFilters.page }} / {{ fleetTotalPages }}</span>
+                                <button type="button" class="btn btn--xs" :disabled="fleetFilters.page >= fleetTotalPages" @click="fleetFilters.page += 1">Suivant →</button>
+                            </div>
+                        </nav>
+
+                        <div v-if="!filteredDevices.length" class="state-empty">
+                            <h3>Aucun appareil ne correspond aux critères</h3>
+                            <button type="button" class="btn" @click="fleetFilters.query = ''; fleetFilters.status = 'all'; fleetFilters.source = 'all'">Réinitialiser les filtres</button>
+                        </div>
+
+                        <!-- Activité Flotte & Confirmations Anti-Flap en attente (Périmètre explicite Audit #8) -->
+                        <div class="health-grid">
+                            <section class="panel-card" aria-labelledby="fleet-transitions-title">
+                                <div class="panel-card__head">
+                                    <h3 id="fleet-transitions-title">Transitions d’état confirmées (Flotte uniquement)</h3>
+                                    <span class="cell-sub">{{ dataset.recentTransitions.length }} transition(s)</span>
+                                </div>
+                                <ol class="timeline-list">
+                                    <li v-for="tr in dataset.recentTransitions" :key="tr.at + tr.uuid">
+                                        <button type="button" class="timeline-row" @click="inspectObject('device', tr.uuid)">
+                                            <span class="timeline-row__time">{{ formatRelative(tr.at) }}</span>
+                                            <span class="status-badge" :class="'status-badge--' + stateMeta(tr.to).tone">{{ stateMeta(tr.to).label }}</span>
+                                            <span class="timeline-row__body">
+                                                <span class="timeline-row__title">{{ tr.name }}</span>
+                                                <span class="timeline-row__desc">{{ tr.detail }}</span>
+                                            </span>
+                                        </button>
+                                    </li>
+                                </ol>
+                            </section>
+
+                            <section class="panel-card" aria-labelledby="fleet-pending-title">
+                                <div class="panel-card__head">
+                                    <h3 id="fleet-pending-title">Confirmations anti-flap Teams en cours</h3>
+                                    <span class="nav-counter nav-counter--warning">{{ pendingFleetConfirmations.length }}</span>
+                                </div>
+                                <ol v-if="pendingFleetConfirmations.length" class="priority-list">
+                                    <li v-for="dev in pendingFleetConfirmations" :key="dev.uuid" class="priority-item priority-item--warning">
+                                        <button type="button" class="priority-item__main" @click="inspectObject('device', dev.uuid)">
+                                            <span class="priority-item__meta">
+                                                <span class="status-badge status-badge--warning">{{ dev.pendingConfirmation.count }}/{{ dev.pendingConfirmation.required }} poll(s)</span>
+                                                <strong>{{ dev.name }}</strong>
+                                            </span>
+                                            <span class="priority-item__cause">Nouvel état observé : {{ stateMeta(dev.pendingConfirmation.state).label }}</span>
+                                        </button>
+                                        <button type="button" class="btn btn--xs" @click="inspectObject('device', dev.uuid)">Inspecter →</button>
+                                    </li>
+                                </ol>
+                                <div v-else class="state-empty state-empty--flush">
+                                    <p>Aucune transition en attente de confirmation Balena.</p>
+                                </div>
+                            </section>
+                        </div>
+                    </template>
+                </section>
+
+                <!-- ==========================================================
+                     4. ALERTES (#alerts & #alerts/{alertId})
+                     ========================================================== -->
+                <section v-else-if="route.view === 'alerts'" class="view-stack" aria-labelledby="view-title-alerts">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Centre de notification</p>
+                            <h2 id="view-title-alerts">Alertes</h2>
+                            <p class="workspace-header__lead">File des alertes issues des transitions confirmées d’appareils et des incidents de flux, avec suivi de livraison Microsoft Teams.</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <span>Modèle d’URL canonique : <code>#alerts/{alert_id}</code></span>
+                        </div>
+                    </div>
+
+                    <div class="noc-toolbar" role="search" aria-label="Filtres des alertes">
+                        <div class="noc-toolbar__fields">
+                            <div class="field-group field-group--search">
+                                <label for="alerts-search-input">Rechercher une alerte</label>
+                                <input id="alerts-search-input" v-model="alertFilters.query" type="search" placeholder="ID alerte, appareil, flux, détail…">
+                            </div>
+                            <div class="field-group">
+                                <label for="alerts-status-select">Statut</label>
+                                <select id="alerts-status-select" v-model="alertFilters.status">
+                                    <option value="active">Actives (Ouvertes + Acquittées)</option>
+                                    <option value="open">Ouvertes uniquement</option>
+                                    <option value="acknowledged">Acquittées</option>
+                                    <option value="closed">Closes</option>
+                                    <option value="all">Toutes</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label for="alerts-plan-select">Origine</label>
+                                <select id="alerts-plan-select" v-model="alertFilters.plan">
+                                    <option value="all">Toutes origines</option>
+                                    <option value="device">Appareil</option>
+                                    <option value="flow">Flux métier</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn--ghost" @click="alertFilters.query = ''; alertFilters.status = 'active'; alertFilters.plan = 'all'">Réinitialiser</button>
+                    </div>
+
+                    <div v-if="filteredAlerts.length" class="table-wrap">
+                        <table class="noc-table">
+                            <caption class="sr-only">Liste des alertes</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Alerte &amp; Sujet</th>
+                                    <th scope="col">Origine</th>
+                                    <th scope="col">Sévérité</th>
+                                    <th scope="col">Statut</th>
+                                    <th scope="col">Livraison Teams</th>
+                                    <th scope="col">Mise à jour</th>
+                                    <th scope="col">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="al in filteredAlerts"
+                                    :key="al.alert_id"
+                                    :class="[
+                                        'row--' + (al.severity === 'critical' ? 'critical' : 'high'),
+                                        inspected && inspected.kind === 'alert' && inspected.id === al.alert_id ? 'is-selected' : ''
+                                    ]"
+                                    @click="inspectObject('alert', al.alert_id)"
+                                >
+                                    <td>
+                                        <span class="cell-primary">{{ al.subject_name }}</span>
+                                        <span class="cell-sub">{{ al.alert_id }} · {{ al.detail }}</span>
+                                    </td>
+                                    <td><span class="tech-pill">{{ al.plan === 'flow' ? 'Flux métier' : 'Appareil' }}</span></td>
+                                    <td>
+                                        <span class="status-badge" :class="al.severity === 'critical' ? 'status-badge--critical' : 'status-badge--high'">
+                                            {{ al.severity === 'critical' ? 'Critique' : 'Haute' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge" :class="al.status === 'open' ? 'status-badge--high' : (al.status === 'acknowledged' ? 'status-badge--warning' : 'status-badge--closed')">
+                                            {{ al.status === 'open' ? 'Ouverte' : (al.status === 'acknowledged' ? 'Acquittée' : 'Close') }}
+                                        </span>
+                                    </td>
+                                    <td class="mono">
+                                        {{ al.latest_delivery && al.latest_delivery.status === 'sent' ? 'Envoyée (HTTP ' + al.latest_delivery.http_status + ')' : 'En attente' }}
+                                    </td>
+                                    <td class="mono">{{ formatRelative(al.updated_at) }}</td>
+                                    <td><button type="button" class="btn btn--xs">Inspecter →</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div v-else class="state-empty">
+                        <h3>Aucune alerte pour ce filtre</h3>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     5. INCIDENTS (#incidents & #incidents/{incidentId})
+                     ========================================================== -->
+                <section v-else-if="route.view === 'incidents'" class="view-stack" aria-labelledby="view-title-incidents">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Traitement opérateur</p>
+                            <h2 id="view-title-incidents">Incidents</h2>
+                            <p class="workspace-header__lead">Problèmes corrélés sur les flux métier. L’incident est le seul objet sur lequel l’opérateur consigne des notes, transitions et résolutions.</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <span>Modèle d’URL canonique : <code>#incidents/{incident_id}</code></span>
+                        </div>
+                    </div>
+
+                    <div class="kpi-strip" role="group" aria-label="Filtrage rapide des incidents">
+                        <button type="button" class="kpi-card kpi-card--critical" :aria-pressed="incidentFilters.state === 'active' ? 'true' : 'false'" @click="incidentFilters.state = 'active'">
+                            <span class="kpi-card__label">Incidents actifs</span>
+                            <span class="kpi-card__value">{{ incidentCounts.active }}</span>
+                            <span class="kpi-card__sub">Hors Résolu et Clos</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--warning" :aria-pressed="incidentFilters.state === 'DETECTE' ? 'true' : 'false'" @click="incidentFilters.state = 'DETECTE'">
+                            <span class="kpi-card__label">Détectés</span>
+                            <span class="kpi-card__value">{{ incidentCounts.detecte }}</span>
+                            <span class="kpi-card__sub">À prendre en charge</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--high" :aria-pressed="incidentFilters.state === 'in_progress' ? 'true' : 'false'" @click="incidentFilters.state = 'in_progress'">
+                            <span class="kpi-card__label">En traitement</span>
+                            <span class="kpi-card__value">{{ incidentCounts.inProgress }}</span>
+                            <span class="kpi-card__sub">Ouvert, Analyse, Correction</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--ok" :aria-pressed="incidentFilters.state === 'EN_VALIDATION' ? 'true' : 'false'" @click="incidentFilters.state = 'EN_VALIDATION'">
+                            <span class="kpi-card__label">En validation</span>
+                            <span class="kpi-card__value">{{ incidentCounts.validation }}</span>
+                            <span class="kpi-card__sub">Prêts pour résolution</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--closed" :aria-pressed="incidentFilters.state === 'terminal' ? 'true' : 'false'" @click="incidentFilters.state = 'terminal'">
+                            <span class="kpi-card__label">Résolus &amp; Clos</span>
+                            <span class="kpi-card__value">{{ incidentCounts.terminal }}</span>
+                            <span class="kpi-card__sub">Historique terminé</span>
+                        </button>
+                    </div>
+
+                    <div class="noc-toolbar" role="search" aria-label="Filtres des incidents">
+                        <div class="noc-toolbar__fields">
+                            <div class="field-group field-group--search">
+                                <label for="incidents-search-input">Rechercher un incident</label>
+                                <input id="incidents-search-input" v-model="incidentFilters.query" type="search" placeholder="ID incident, signature d’erreur, clé de corrélation…">
+                            </div>
+                            <div class="field-group">
+                                <label for="incidents-state-select">État du cycle de vie</label>
+                                <select id="incidents-state-select" v-model="incidentFilters.state">
+                                    <option value="active">Actifs (Hors Résolu et Clos)</option>
+                                    <option value="all">Tous les états</option>
+                                    <option value="in_progress">En traitement (Ouvert/Analyse/Correction)</option>
+                                    <option value="terminal">Terminés (Résolu/Clos)</option>
+                                    <option value="DETECTE">Détecté</option>
+                                    <option value="OUVERT">Ouvert</option>
+                                    <option value="EN_ANALYSE">En analyse</option>
+                                    <option value="EN_CORRECTION">En correction</option>
+                                    <option value="EN_VALIDATION">En validation</option>
+                                    <option value="RESOLU">Résolu</option>
+                                    <option value="CLOS">Clos</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label for="incidents-flow-select">Flux concerné</label>
+                                <select id="incidents-flow-select" v-model="incidentFilters.flowId">
+                                    <option value="all">Tous les flux</option>
+                                    <option v-for="fl in dataset.flows" :key="fl.flow_id" :value="fl.flow_id">{{ fl.name }} ({{ fl.flow_id }})</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn--ghost" @click="incidentFilters.query = ''; incidentFilters.state = 'active'; incidentFilters.flowId = 'all'">Réinitialiser</button>
+                    </div>
+
+                    <div class="results-bar">
+                        <span>{{ filteredIncidents.length }} incident(s) affiché(s) sur {{ dataset.incidents.length }}</span>
+                        <span v-if="incidentFilters.flowId !== 'all'">Filtre flux isolé actif : <code>{{ incidentFilters.flowId }}</code></span>
+                    </div>
+
+                    <div v-if="filteredIncidents.length" class="table-wrap">
+                        <table class="noc-table">
+                            <caption class="sr-only">Liste des incidents</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Incident</th>
+                                    <th scope="col">Flux métier</th>
+                                    <th scope="col">État actuel</th>
+                                    <th scope="col">Signature d’erreur &amp; Clause</th>
+                                    <th scope="col">Dernière intervention</th>
+                                    <th scope="col">Ouvert</th>
+                                    <th scope="col">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="inc in filteredIncidents"
+                                    :key="inc.incident_id"
+                                    :class="[
+                                        'row--' + incidentStateMeta(inc.state).tone,
+                                        inspected && inspected.kind === 'incident' && inspected.id === inc.incident_id ? 'is-selected' : ''
+                                    ]"
+                                    @click="inspectObject('incident', inc.incident_id)"
+                                >
+                                    <td>
+                                        <span class="cell-primary mono">{{ inc.incident_id }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="cell-primary">{{ inc.flow_id }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge" :class="'status-badge--' + incidentStateMeta(inc.state).tone">
+                                            {{ incidentStateMeta(inc.state).label }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="cell-primary mono">{{ inc.error_signature }}</span>
+                                        <span class="cell-sub">Clause : {{ inc.clause_id }}</span>
+                                    </td>
+                                    <td class="cell-truncate">{{ lastActionLabel(inc) }}</td>
+                                    <td class="mono" :title="formatDateTime(inc.opened_at)">{{ formatRelative(inc.opened_at) }}</td>
+                                    <td><button type="button" class="btn btn--xs btn--primary">Traiter →</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div v-else class="state-empty">
+                        <h3>Aucun incident ne correspond aux filtres</h3>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     6. ANOMALIES (#anomalies & #anomalies/{anomalyId})
+                     ========================================================== -->
+                <section v-else-if="route.view === 'anomalies'" class="view-stack" aria-labelledby="view-title-anomalies">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Écarts agrégés</p>
+                            <h2 id="view-title-anomalies">Anomalies</h2>
+                            <p class="workspace-header__lead">Écarts ouverts et fermés par rapport aux clauses des contrats de santé (lecture seule).</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <span>Modèle d’URL canonique : <code>#anomalies/{anomaly_id}</code></span>
+                        </div>
+                    </div>
+
+                    <div class="kpi-strip" role="group" aria-label="Filtrage rapide des anomalies">
+                        <button type="button" class="kpi-card" :aria-pressed="anomalyFilters.status === 'all' ? 'true' : 'false'" @click="anomalyFilters.status = 'all'">
+                            <span class="kpi-card__label">Toutes les anomalies</span>
+                            <span class="kpi-card__value">{{ dataset.anomalies.length }}</span>
+                            <span class="kpi-card__sub">Registre courant</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--warning" :aria-pressed="anomalyFilters.status === 'open' ? 'true' : 'false'" @click="anomalyFilters.status = 'open'">
+                            <span class="kpi-card__label">Ouvertes</span>
+                            <span class="kpi-card__value">{{ openAnomaliesCount }}</span>
+                            <span class="kpi-card__sub">Écarts actifs non refermés</span>
+                        </button>
+                        <button type="button" class="kpi-card kpi-card--closed" :aria-pressed="anomalyFilters.status === 'closed' ? 'true' : 'false'" @click="anomalyFilters.status = 'closed'">
+                            <span class="kpi-card__label">Fermées</span>
+                            <span class="kpi-card__value">{{ closedAnomaliesCount }}</span>
+                            <span class="kpi-card__sub">Refermées par un succès</span>
+                        </button>
+                    </div>
+
+                    <div class="noc-toolbar" role="search" aria-label="Filtres des anomalies">
+                        <div class="noc-toolbar__fields">
+                            <div class="field-group field-group--search">
+                                <label for="anomalies-search-input">Rechercher une anomalie</label>
+                                <input id="anomalies-search-input" v-model="anomalyFilters.query" type="search" placeholder="ID anomalie, signature, clause, flux…">
+                            </div>
+                            <div class="field-group">
+                                <label for="anomalies-status-select">État</label>
+                                <select id="anomalies-status-select" v-model="anomalyFilters.status">
+                                    <option value="all">Toutes (Ouvertes + Fermées)</option>
+                                    <option value="open">Ouvertes</option>
+                                    <option value="closed">Fermées</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label for="anomalies-flow-select">Flux</label>
+                                <select id="anomalies-flow-select" v-model="anomalyFilters.flowId">
+                                    <option value="all">Tous les flux</option>
+                                    <option v-for="fl in dataset.flows" :key="fl.flow_id" :value="fl.flow_id">{{ fl.name }}</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label for="anomalies-clause-select">Clause</label>
+                                <select id="anomalies-clause-select" v-model="anomalyFilters.clause">
+                                    <option value="all">Toutes les clauses</option>
+                                    <option v-for="cl in anomalyClauseOptions" :key="cl" :value="cl">{{ cl }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn--ghost" @click="anomalyFilters.query = ''; anomalyFilters.status = 'all'; anomalyFilters.flowId = 'all'; anomalyFilters.clause = 'all'">Réinitialiser</button>
+                    </div>
+
+                    <div v-if="filteredAnomalies.length" class="table-wrap">
+                        <table class="noc-table">
+                            <caption class="sr-only">Liste des anomalies</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">État</th>
+                                    <th scope="col">Anomalie &amp; Signature</th>
+                                    <th scope="col">Flux métier</th>
+                                    <th scope="col">Clause</th>
+                                    <th scope="col">Occurrences</th>
+                                    <th scope="col">Ouverte</th>
+                                    <th scope="col">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="an in filteredAnomalies"
+                                    :key="an.anomaly_id"
+                                    :class="[
+                                        an.status === 'open' ? 'row--warning' : '',
+                                        inspected && inspected.kind === 'anomaly' && inspected.id === an.anomaly_id ? 'is-selected' : ''
+                                    ]"
+                                    @click="inspectObject('anomaly', an.anomaly_id)"
+                                >
+                                    <td>
+                                        <span class="status-badge" :class="an.status === 'open' ? 'status-badge--warning' : 'status-badge--closed'">
+                                            {{ an.status === 'open' ? 'Ouverte' : 'Fermée' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="cell-primary mono">{{ an.error_signature }}</span>
+                                        <span class="cell-sub">{{ an.anomaly_id }}</span>
+                                    </td>
+                                    <td>{{ an.flow_id }}</td>
+                                    <td><code>{{ an.clause_id }}</code></td>
+                                    <td class="mono"><strong>{{ an.occurrence_count }}</strong></td>
+                                    <td class="mono">{{ formatRelative(an.opened_at) }}</td>
+                                    <td><button type="button" class="btn btn--xs">Inspecter →</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     7. ÉVÉNEMENTS (#events & #events/{eventId})
+                     ========================================================== -->
+                <section v-else-if="route.view === 'events'" class="view-stack" aria-labelledby="view-title-events">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Journal technique immuable</p>
+                            <h2 id="view-title-events">Événements</h2>
+                            <p class="workspace-header__lead">Faits techniques reçus sur <code>POST /v1/events</code>. Cliquer sur une ligne ouvre son détail et son payload JSON dans le tiroir d’inspection.</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <span>Modèle d’URL canonique : <code>#events/{event_id}</code></span>
+                        </div>
+                    </div>
+
+                    <div class="noc-toolbar" role="search" aria-label="Filtres des événements">
+                        <div class="noc-toolbar__fields">
+                            <div class="field-group field-group--search">
+                                <label for="events-search-input">Rechercher un événement</label>
+                                <input id="events-search-input" v-model="eventFilters.query" type="search" placeholder="ID événement, type, flux, source, signature…">
+                            </div>
+                            <div class="field-group">
+                                <label for="events-type-select">Type d’événement</label>
+                                <select id="events-type-select" v-model="eventFilters.type">
+                                    <option value="all">Tous les types</option>
+                                    <option v-for="t in eventTypeOptions" :key="t" :value="t">{{ t }}</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label for="events-source-select">Source</label>
+                                <select id="events-source-select" v-model="eventFilters.source">
+                                    <option value="all">Toutes les sources</option>
+                                    <option v-for="s in eventSourceOptions" :key="s" :value="s">{{ s }}</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label for="events-flow-select">Flux</label>
+                                <select id="events-flow-select" v-model="eventFilters.flowId">
+                                    <option value="all">Tous les flux</option>
+                                    <option v-for="fl in dataset.flows" :key="fl.flow_id" :value="fl.flow_id">{{ fl.name }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn--ghost" @click="eventFilters.query = ''; eventFilters.type = 'all'; eventFilters.source = 'all'; eventFilters.flowId = 'all'">Réinitialiser</button>
+                    </div>
+
+                    <div v-if="filteredEvents.length" class="table-wrap">
+                        <table class="noc-table">
+                            <caption class="sr-only">Journal des événements</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Horodatage UTC</th>
+                                    <th scope="col">Statut</th>
+                                    <th scope="col">Type d’événement</th>
+                                    <th scope="col">Flux métier</th>
+                                    <th scope="col">Producteur &amp; Source</th>
+                                    <th scope="col">Signature</th>
+                                    <th scope="col">Payload</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="ev in filteredEvents"
+                                    :key="ev.event_id"
+                                    :class="[
+                                        ev.status === 'failure' ? 'row--critical' : '',
+                                        inspected && inspected.kind === 'event' && inspected.id === ev.event_id ? 'is-selected' : ''
+                                    ]"
+                                    @click="inspectObject('event', ev.event_id)"
+                                >
+                                    <td class="mono">{{ formatDateTime(ev.timestamp) }}</td>
+                                    <td>
+                                        <span class="status-badge" :class="ev.status === 'success' ? 'status-badge--ok' : (ev.status === 'failure' ? 'status-badge--critical' : 'status-badge--warning')">
+                                            {{ ev.status === 'success' ? 'Succès' : (ev.status === 'failure' ? 'Échec' : ev.status) }}
+                                        </span>
+                                    </td>
+                                    <td class="mono"><strong>{{ ev.event_type }}</strong></td>
+                                    <td>{{ ev.flow_id }}</td>
+                                    <td class="mono">{{ ev.producer }} · {{ ev.source_id }}</td>
+                                    <td class="mono">{{ ev.error_signature || '—' }}</td>
+                                    <td><button type="button" class="btn btn--xs">Payload JSON →</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     8. CONFIGURATION (#admin)
+                     ========================================================== -->
+                <section v-else-if="route.view === 'admin'" class="view-stack" aria-labelledby="view-title-admin">
+                    <div class="workspace-header">
+                        <div class="workspace-header__titles">
+                            <p class="eyebrow">Paramètres du siège</p>
+                            <h2 id="view-title-admin">Configuration</h2>
+                            <p class="workspace-header__lead">Intégrations Balena Cloud, broker MQTT, Microsoft Teams, seuils anti-flap et inventaire manuel pré-déclaré.</p>
+                        </div>
+                        <div class="workspace-header__meta">
+                            <button type="button" class="btn btn--primary" @click="enrollOpen = true">+ Connecter un appareil</button>
+                        </div>
+                    </div>
+
+                    <div v-if="adminForm.notice" class="ui-banner ui-banner--success" role="status">{{ adminForm.notice }}</div>
+
+                    <div class="admin-grid">
+                        <article class="admin-card">
+                            <div class="admin-card__head">
+                                <h3>Balena Cloud</h3>
+                                <span class="status-badge status-badge--ok">Connecté</span>
+                            </div>
+                            <p class="cell-sub">Inventaire multi-flottes et statut en ligne des passerelles.</p>
+                            <div class="field-group">
+                                <label for="adm-balena-apps">Identifiants de flottes (App IDs / Slugs)</label>
+                                <textarea id="adm-balena-apps" v-model="adminForm.balenaAppId" rows="3" class="mono" @input="adminForm.dirty = true"></textarea>
+                            </div>
+                            <div class="field-group">
+                                <label for="adm-balena-token">Jeton API (masqué : {{ dataset.admin.balena.tokenHint }})</label>
+                                <input id="adm-balena-token" v-model="adminForm.balenaToken" type="password" placeholder="Laisser vide pour conserver le jeton actuel" @input="adminForm.dirty = true">
+                            </div>
+                        </article>
+
+                        <article class="admin-card">
+                            <div class="admin-card__head">
+                                <h3>Heartbeat MQTT</h3>
+                                <span class="status-badge status-badge--ok">Réception OK</span>
+                            </div>
+                            <p class="cell-sub">Paramètres affichés dans l’assistant d’onboarding des passerelles.</p>
+                            <div class="field-group">
+                                <label for="adm-mqtt-host">Hôte broker</label>
+                                <input id="adm-mqtt-host" v-model="adminForm.mqttHost" type="text" class="mono" @input="adminForm.dirty = true">
+                            </div>
+                            <div class="field-group">
+                                <label for="adm-mqtt-port">Port TCP</label>
+                                <input id="adm-mqtt-port" v-model="adminForm.mqttPort" type="number" min="1" max="65535" class="mono" @input="adminForm.dirty = true">
+                            </div>
+                            <div class="field-group">
+                                <label for="adm-mqtt-topic">Modèle de topic</label>
+                                <input id="adm-mqtt-topic" v-model="adminForm.mqttTopicPattern" type="text" class="mono" @input="adminForm.dirty = true">
+                            </div>
+                        </article>
+
+                        <article class="admin-card">
+                            <div class="admin-card__head">
+                                <h3>Microsoft Teams</h3>
+                                <span class="status-badge status-badge--ok">Configuré</span>
+                            </div>
+                            <p class="cell-sub">Hôte actif : <code>{{ dataset.admin.teams.webhookHost }}</code></p>
+                            <div class="field-group">
+                                <label for="adm-teams-url">URL Webhook Workflows</label>
+                                <input id="adm-teams-url" v-model="adminForm.teamsWebhookUrl" type="password" placeholder="Laisser vide pour conserver l’URL actuelle" @input="adminForm.dirty = true">
+                            </div>
+                            <button type="button" class="btn" @click="adminForm.notice = 'Carte Adaptive Card de test envoyée vers Microsoft Teams.'">Tester l’intégration Teams</button>
+                        </article>
+                    </div>
+
+                    <article class="admin-card">
+                        <div class="admin-card__head">
+                            <h3>Identité du siège et seuils anti-flap</h3>
+                            <div class="flex-row-gap">
+                                <button type="button" class="btn" :disabled="!adminForm.dirty" @click="cancelAdminSettings">Annuler</button>
+                                <button type="button" class="btn btn--primary" :disabled="!adminForm.dirty" @click="saveAdminSettings">Enregistrer les modifications</button>
+                            </div>
+                        </div>
+                        <div class="thresholds-grid">
+                            <div class="field-group">
+                                <label for="adm-fleet-name">Nom du siège</label>
+                                <input id="adm-fleet-name" v-model="adminForm.fleetName" type="text" @input="adminForm.dirty = true">
+                            </div>
+                            <div class="field-group">
+                                <label for="adm-grace-hb">Grâce heartbeat (minutes)</label>
+                                <input id="adm-grace-hb" v-model="adminForm.offlineGraceMinutes" type="number" min="1" max="60" @input="adminForm.dirty = true">
+                            </div>
+                            <div class="field-group">
+                                <label for="adm-grace-new">Grâce nouvel appareil (minutes)</label>
+                                <input id="adm-grace-new" v-model="adminForm.firstSeenGraceMinutes" type="number" min="1" max="60" @input="adminForm.dirty = true">
+                            </div>
+                            <div class="field-group">
+                                <label for="adm-confirms">Polls consécutifs avant alerte Teams</label>
+                                <input id="adm-confirms" v-model="adminForm.confirmsRequired" type="number" min="1" max="5" @input="adminForm.dirty = true">
+                            </div>
+                            <div class="field-group">
+                                <label for="adm-ttl">Rétention heartbeats (jours)</label>
+                                <input id="adm-ttl" v-model="adminForm.heartbeatTtlDays" type="number" min="1" max="365" @input="adminForm.dirty = true">
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="admin-card">
+                        <div class="admin-card__head">
+                            <h3>Appareils pré-enregistrés manuellement ({{ dataset.admin.enrolled.length }})</h3>
+                        </div>
+                        <div v-if="dataset.admin.enrolled.length" class="table-wrap">
+                            <table class="noc-table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Nom</th>
+                                        <th scope="col">UUID</th>
+                                        <th scope="col">Date d’enregistrement</th>
+                                        <th scope="col">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in dataset.admin.enrolled" :key="item.uuid" @click="inspectObject('device', item.uuid)">
+                                        <td class="cell-primary">{{ item.name }}</td>
+                                        <td class="mono">{{ item.uuid }}</td>
+                                        <td class="mono">{{ formatDateTime(item.enrolledAt) }}</td>
+                                        <td @click.stop>
+                                            <button type="button" class="btn btn--xs" @click="removeEnrolledDevice(item.uuid)">Retirer</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p v-else class="cell-sub">Aucun appareil pré-enregistré.</p>
+                    </article>
+                </section>
+            </main>
+
+            <!-- ==============================================================
+                 TIROIR D'INSPECTION UNIFIÉ (Patron unique pour les 6 objets + 404 + 503)
+                 ============================================================== -->
+            <div v-if="inspected" class="inspector-backdrop" @mousedown.self="closeInspector">
+                <aside id="inspector-drawer-box" class="inspector-drawer" role="dialog" aria-modal="true" aria-labelledby="inspector-title">
+                    <div class="inspector-header">
+                        <div class="inspector-header__top">
+                            <div class="inspector-breadcrumb">
+                                <button type="button" class="btn btn--xs" @click="smartBack">← Retour</button>
+                                <span>·</span>
+                                <span class="eyebrow">{{ inspected.parentViewLabel }} · {{ inspected.kindLabel }}</span>
+                            </div>
+                            <div class="flex-row-gap">
+                                <button type="button" class="btn btn--xs" @click="copyCanonicalUrl">{{ copyUrlFeedback || 'Copier ' + inspected.canonicalUrl }}</button>
+                                <button id="inspector-close-btn" type="button" class="btn btn--xs" aria-label="Fermer l’inspecteur" @click="closeInspector">Fermer ✕</button>
+                            </div>
+                        </div>
+
+                        <!-- Cas 503 : Relevé absent / indisponible -->
+                        <div v-if="inspected.state === 'unavailable'" class="inspector-header__main">
+                            <div>
+                                <h2 id="inspector-title">Relevé indisponible (503)</h2>
+                                <p class="inspector-id">{{ inspected.kindLabel }} demandé : <code>{{ inspected.id }}</code></p>
+                            </div>
+                            <span class="status-badge status-badge--warning">Snapshot absent</span>
+                        </div>
+
+                        <!-- Cas 404 : Objet introuvable dans le relevé -->
+                        <div v-else-if="inspected.state === 'not_found'" class="inspector-header__main">
+                            <div>
+                                <h2 id="inspector-title">Objet introuvable (404)</h2>
+                                <p class="inspector-id">{{ inspected.kindLabel }} demandé : <code>{{ inspected.id }}</code></p>
+                            </div>
+                            <span class="status-badge status-badge--critical">Introuvable</span>
+                        </div>
+
+                        <!-- En-tête quand l'objet existe (200) -->
+                        <div v-else class="inspector-header__main">
+                            <div>
+                                <h2 id="inspector-title">
+                                    <template v-if="inspected.kind === 'flow'">{{ inspected.record.name }}</template>
+                                    <template v-else-if="inspected.kind === 'device'">{{ inspected.record.name }}</template>
+                                    <template v-else-if="inspected.kind === 'incident'">Incident {{ inspected.record.incident_id }}</template>
+                                    <template v-else-if="inspected.kind === 'alert'">Alerte {{ inspected.record.alert_id }}</template>
+                                    <template v-else-if="inspected.kind === 'anomaly'">Anomalie {{ inspected.record.anomaly_id }}</template>
+                                    <template v-else-if="inspected.kind === 'event'">Événement {{ inspected.record.event_type }}</template>
+                                </h2>
+                                <div class="inspector-id">
+                                    <code>{{ inspected.id }}</code>
+                                    <button type="button" class="btn btn--xs" @click="copyIdentifier(inspected.id)">{{ copyIdFeedback || 'Copier l’ID' }}</button>
+                                </div>
+                            </div>
+
+                            <span v-if="inspected.kind === 'flow'" class="status-badge" :class="'status-badge--' + flowStatusMeta(inspected.record.status).tone">
+                                {{ flowStatusMeta(inspected.record.status).label }}
+                            </span>
+                            <span v-else-if="inspected.kind === 'device'" class="status-badge" :class="'status-badge--' + stateMeta(inspected.record.state).tone">
+                                {{ stateMeta(inspected.record.state).label }}
+                            </span>
+                            <span v-else-if="inspected.kind === 'incident'" class="status-badge" :class="'status-badge--' + incidentStateMeta(inspected.record.state).tone">
+                                {{ incidentStateMeta(inspected.record.state).label }}
+                            </span>
+                            <span v-else-if="inspected.kind === 'anomaly'" class="status-badge" :class="inspected.record.status === 'open' ? 'status-badge--warning' : 'status-badge--closed'">
+                                {{ inspected.record.status === 'open' ? 'Ouverte' : 'Fermée' }}
+                            </span>
+                            <span v-else-if="inspected.kind === 'event'" class="status-badge" :class="inspected.record.status === 'success' ? 'status-badge--ok' : 'status-badge--critical'">
+                                {{ inspected.record.status === 'success' ? 'Succès' : 'Échec' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="inspector-body">
+                        <!-- Corps 503 : Snapshot absent (ne pas confondre avec un 404) -->
+                        <template v-if="inspected.state === 'unavailable'">
+                            <div class="state-empty">
+                                <h3>Impossible de vérifier cet identifiant sans relevé</h3>
+                                <p>L’adresse <code>{{ inspected.canonicalUrl }}</code> cible un objet <strong>{{ inspected.kindLabel }}</strong> (<code>{{ inspected.id }}</code>), mais le snapshot correspondant n’a pas été reçu.</p>
+                                <div class="flex-row-gap" style="justify-content:center;margin-top:12px;">
+                                    <button type="button" class="btn" @click="closeInspector">Fermer l’inspecteur</button>
+                                    <button type="button" class="btn btn--primary" @click="applyScenario('crisis')">Rétablir le snapshot</button>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Corps 404 : Objet inexistant dans le relevé chargé -->
+                        <template v-else-if="inspected.state === 'not_found'">
+                            <div class="state-empty">
+                                <h3>Cet identifiant n’existe pas dans le relevé courant</h3>
+                                <p>L’adresse <code>{{ inspected.canonicalUrl }}</code> pointe vers un objet <strong>{{ inspected.kindLabel }}</strong> (<code>{{ inspected.id }}</code>) qui est absent ou a été purgé.</p>
+                                <div class="flex-row-gap" style="justify-content:center;margin-top:12px;">
+                                    <button type="button" class="btn" @click="smartBack">← Retour</button>
+                                    <button type="button" class="btn btn--primary" @click="closeInspector">Revenir à {{ inspected.parentViewLabel }}</button>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- 1. DÉTAIL FLUX MÉTIER -->
+                        <template v-else-if="inspected.kind === 'flow'">
+                            <section class="inspector-section">
+                                <h3>Pourquoi cet état ?</h3>
+                                <p>{{ flowWhyText(inspected.record) }}</p>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Chaîne supervisée (Source → Connecteur → Destination)</h3>
+                                <div class="pipeline-diagram">
+                                    <div class="pipeline-node">
+                                        <span class="pipeline-node__role">Source</span>
+                                        <span class="pipeline-node__id">{{ inspected.record.source_id }}</span>
+                                    </div>
+                                    <span class="pipeline-arrow">──►</span>
+                                    <div class="pipeline-node">
+                                        <span class="pipeline-node__role">Connecteur</span>
+                                        <span class="pipeline-node__id">{{ inspected.record.connector_id }}</span>
+                                    </div>
+                                    <span class="pipeline-arrow">──►</span>
+                                    <div class="pipeline-node">
+                                        <span class="pipeline-node__role">Destination</span>
+                                        <span class="pipeline-node__id">{{ inspected.record.destination_id }}</span>
+                                    </div>
+                                </div>
+                                <dl class="facts-grid">
+                                    <dt>Producteur déclaré</dt><dd class="mono">{{ inspected.record.producer }}</dd>
+                                    <dt>Dernier événement</dt>
+                                    <dd>
+                                        <button v-if="inspected.record.last_event_id" type="button" class="related-chip" @click="inspectObject('event', inspected.record.last_event_id)">
+                                            Événement · {{ inspected.record.last_event_id }} →
+                                        </button>
+                                        <span v-else>Aucun événement reçu</span>
+                                    </dd>
+                                </dl>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Règles et clauses de santé ({{ rulesForFlow(inspected.record.flow_id).length }})</h3>
+                                <div v-if="rulesForFlow(inspected.record.flow_id).length" class="view-stack">
+                                    <div v-for="rule in rulesForFlow(inspected.record.flow_id)" :key="rule.id" class="rule-card">
+                                        <div class="flex-between">
+                                            <strong>Clause : <code>{{ rule.clause_id }}</code></strong>
+                                            <span class="tech-pill">{{ rule.kind }}</span>
+                                        </div>
+                                        <span class="cell-sub">Ouvre sur : {{ rule.event_types.join(', ') }} ({{ rule.open_statuses.join(', ') }})</span>
+                                        <span class="cell-sub">Ferme sur : {{ rule.success_types.join(', ') }} (success)</span>
+                                    </div>
+                                </div>
+                                <p v-else class="cell-sub">Aucune règle projetée pour ce flux.</p>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Incidents liés ({{ dataset.incidents.filter(function(i){ return i.flow_id === inspected.record.flow_id; }).length }})</h3>
+                                <ul v-if="dataset.incidents.filter(function(i){ return i.flow_id === inspected.record.flow_id; }).length" class="related-chips">
+                                    <li v-for="inc in dataset.incidents.filter(function(i){ return i.flow_id === inspected.record.flow_id; })" :key="inc.incident_id">
+                                        <button type="button" class="related-chip" @click="inspectObject('incident', inc.incident_id)">
+                                            <span>{{ inc.incident_id }}</span>
+                                            <span class="status-badge status-badge--compact" :class="'status-badge--' + incidentStateMeta(inc.state).tone">{{ incidentStateMeta(inc.state).label }}</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                                <p v-else class="cell-sub">Aucun incident lié à ce flux.</p>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Anomalies liées ({{ dataset.anomalies.filter(function(a){ return a.flow_id === inspected.record.flow_id; }).length }})</h3>
+                                <ul v-if="dataset.anomalies.filter(function(a){ return a.flow_id === inspected.record.flow_id; }).length" class="related-chips">
+                                    <li v-for="an in dataset.anomalies.filter(function(a){ return a.flow_id === inspected.record.flow_id; })" :key="an.anomaly_id">
+                                        <button type="button" class="related-chip" @click="inspectObject('anomaly', an.anomaly_id)">
+                                            <span>{{ an.anomaly_id }} ({{ an.occurrence_count }}x)</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                                <p v-else class="cell-sub">Aucune anomalie liée.</p>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Événements liés ({{ dataset.events.filter(function(e){ return e.flow_id === inspected.record.flow_id; }).length }})</h3>
+                                <ul v-if="dataset.events.filter(function(e){ return e.flow_id === inspected.record.flow_id; }).length" class="related-chips">
+                                    <li v-for="ev in dataset.events.filter(function(e){ return e.flow_id === inspected.record.flow_id; })" :key="ev.event_id">
+                                        <button type="button" class="related-chip" @click="inspectObject('event', ev.event_id)">
+                                            <span>{{ ev.event_type }} · {{ ev.event_id }}</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                                <p v-else class="cell-sub">Aucun événement reçu pour ce flux.</p>
+                            </section>
+                        </template>
+
+                        <!-- 2. DÉTAIL APPAREIL / PASSERELLE -->
+                        <template v-else-if="inspected.kind === 'device'">
+                            <div v-if="inspected.record.pendingConfirmation" class="ui-banner ui-banner--warning">
+                                <span><strong>Confirmation anti-flap Teams en cours :</strong> {{ inspected.record.pendingConfirmation.count }} / {{ inspected.record.pendingConfirmation.required }} poll(s) Balena consécutifs.</span>
+                            </div>
+                            <div v-if="inspected.record.gatewayGrace" class="ui-banner ui-banner--info">
+                                <span>La passerelle est actuellement dans sa période de grâce de démarrage.</span>
+                            </div>
+
+                            <section class="inspector-section">
+                                <h3>Diagnostic courant</h3>
+                                <p>{{ inspected.record.detail }}</p>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Connectivité, Identité &amp; Heartbeat</h3>
+                                <dl class="facts-grid">
+                                    <dt>Protocole terrain</dt><dd class="mono">{{ inspected.record.protocol.toUpperCase() }}</dd>
+                                    <dt>Application Balena</dt><dd class="mono">{{ inspected.record.device ? inspected.record.device.app : 'Non disponible' }}</dd>
+                                    <dt>Hôte OS</dt><dd class="mono">{{ inspected.record.device ? inspected.record.device.host : 'Non disponible' }}</dd>
+                                    <dt>En ligne Balena Cloud</dt><dd>{{ inspected.record.online ? 'Oui' : 'Non' }}</dd>
+                                    <dt>Heartbeat MQTT valide</dt><dd>{{ inspected.record.hbOk ? 'Oui' : 'Non' }}</dd>
+                                    <dt>État confirmé (anti-flap)</dt><dd class="mono">{{ inspected.record.confirmedState || 'Non confirmé' }}</dd>
+                                    <dt>Dernière connexion Cloud</dt><dd class="mono">{{ formatDateTime(inspected.record.lastConnectivity) }}</dd>
+                                    <dt>Dernier heartbeat MQTT</dt><dd class="mono">{{ formatDateTime(inspected.record.lastHeartbeat) }}</dd>
+                                    <dt>Message MQTT retained</dt><dd>{{ inspected.record.heartbeat ? (inspected.record.heartbeat.retained ? 'Oui' : 'Non') : 'Non disponible' }}</dd>
+                                    <dt>Horodatage fiable</dt><dd>{{ inspected.record.heartbeat ? (inspected.record.heartbeat.timestampTrusted ? 'Oui' : 'Non') : 'Non disponible' }}</dd>
+                                </dl>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Santé des sous-systèmes embarqués</h3>
+                                <dl class="facts-grid">
+                                    <dt>Santé {{ inspected.record.protocol === 'modbus' ? 'Modbus' : 'BACnet' }}</dt>
+                                    <dd>{{ indicatorLabel(inspected.record.indicators.bacnet) }} <span v-if="inspected.record.health && inspected.record.health.status">— {{ inspected.record.health.status }}</span></dd>
+                                    <template v-if="inspected.record.protocol === 'modbus' && inspected.record.health && inspected.record.health.modbus">
+                                        <dt>Dernière lecture Modbus</dt>
+                                        <dd class="mono">{{ formatDateTime(inspected.record.health.modbus.lastSuccessAt) }} ({{ inspected.record.health.modbus.lastSuccessAgeSec }} s)</dd>
+                                        <dt>Dernière erreur Modbus</dt>
+                                        <dd class="mono">{{ inspected.record.health.modbus.lastError || 'Aucune' }}</dd>
+                                        <dt>File Modbus</dt>
+                                        <dd>{{ inspected.record.health.modbus.queue ? (inspected.record.health.modbus.queue.pending + ' en attente · ' + inspected.record.health.modbus.queue.detail) : 'Nominal' }}</dd>
+                                    </template>
+                                    <template v-else>
+                                        <dt>Équipements BACnet</dt>
+                                        <dd class="mono">{{ inspected.record.snapshot ? inspected.record.snapshot.count + ' équipement(s)' : 'Non disponible' }}</dd>
+                                    </template>
+                                    <dt>Runtime Node-RED</dt>
+                                    <dd>{{ inspected.record.health && inspected.record.health.nodeRed ? (inspected.record.health.nodeRed.ok ? 'Actif (uptime ' + Math.round(inspected.record.health.nodeRed.uptimeSec / 3600) + ' h)' : 'Défaut') : 'Non disponible' }}</dd>
+                                    <dt>MQTT Gateway</dt>
+                                    <dd>{{ indicatorLabel(inspected.record.indicators.mqtt) }} <span v-if="inspected.record.mqtt && inspected.record.mqtt.lastError">— {{ inspected.record.mqtt.lastError }}</span></dd>
+                                    <dt>Buffer Store &amp; Forward</dt>
+                                    <dd>{{ indicatorLabel(inspected.record.indicators.buffer) }} <span v-if="inspected.record.buffer">— {{ inspected.record.buffer.pending }} en attente ({{ inspected.record.buffer.detail }})</span></dd>
+                                    <dt>Services Supervisor</dt>
+                                    <dd>{{ inspected.record.supervisor && inspected.record.supervisor.unhealthy && inspected.record.supervisor.unhealthy.length ? 'Malsains : ' + inspected.record.supervisor.unhealthy.join(', ') : 'OK' }}</dd>
+                                </dl>
+                            </section>
+
+                            <section v-if="alertsForDevice(inspected.record.uuid).length" class="inspector-section">
+                                <h3>Alertes liées à cet appareil</h3>
+                                <ul class="related-chips">
+                                    <li v-for="al in alertsForDevice(inspected.record.uuid)" :key="al.alert_id">
+                                        <button type="button" class="related-chip" @click="inspectObject('alert', al.alert_id)">
+                                            <span>Alerte · {{ al.alert_id }} ({{ al.status === 'open' ? 'Ouverte' : 'Acquittée' }}) →</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </section>
+
+                            <section v-if="inspected.record.recentTransitions && inspected.record.recentTransitions.length" class="inspector-section">
+                                <h3>Transitions récentes de cet appareil</h3>
+                                <ul class="inspector-list">
+                                    <li v-for="tr in inspected.record.recentTransitions" :key="tr.at">
+                                        <span class="mono">{{ formatDateTime(tr.at) }}</span> — {{ tr.detail }}
+                                    </li>
+                                </ul>
+                            </section>
+                        </template>
+
+                        <!-- 3. DÉTAIL INCIDENT (Seule surface d'écriture opérateur) -->
+                        <template v-else-if="inspected.kind === 'incident'">
+                            <section class="inspector-section">
+                                <h3>Progression dans le cycle de vie</h3>
+                                <div class="state-stepper">
+                                    <span
+                                        v-for="st in INCIDENT_ORDER"
+                                        :key="st"
+                                        class="state-step"
+                                        :class="{
+                                            'state-step--current': inspected.record.state === st,
+                                            'state-step--next': (INCIDENT_GRAPH[inspected.record.state] || []).indexOf(st) !== -1
+                                        }"
+                                    >
+                                        {{ incidentStateMeta(st).label }}
+                                    </span>
+                                </div>
+                                <dl class="facts-grid">
+                                    <dt>Flux métier impacté</dt>
+                                    <dd>
+                                        <button type="button" class="related-chip" @click="inspectObject('flow', inspected.record.flow_id)">
+                                            Flux · {{ inspected.record.flow_id }} →
+                                        </button>
+                                    </dd>
+                                    <dt>Signature d’erreur</dt><dd class="mono">{{ inspected.record.error_signature }}</dd>
+                                    <dt>Clause du contrat</dt><dd class="mono">{{ inspected.record.clause_id }}</dd>
+                                    <dt>Clé de corrélation</dt><dd class="mono">{{ inspected.record.correlation_key }}</dd>
+                                    <dt>Ouvert le</dt><dd class="mono">{{ formatDateTime(inspected.record.opened_at) }}</dd>
+                                    <dt>Fermé le</dt><dd class="mono">{{ inspected.record.closed_at ? formatDateTime(inspected.record.closed_at) : 'Toujours actif' }}</dd>
+                                </dl>
+                            </section>
+
+                            <!-- Formulaires d'intervention opérateur -->
+                            <section class="inspector-section">
+                                <h3>Intervention opérateur</h3>
+                                <div class="field-group">
+                                    <label for="inc-actor-input">Opérateur (obligatoire)</label>
+                                    <input id="inc-actor-input" v-model="operatorForm.actor" type="text" placeholder="ex. c.catarino">
+                                </div>
+
+                                <!-- Transition ordinaire -->
+                                <div v-if="(INCIDENT_GRAPH[inspected.record.state] || []).filter(function(s){ return s !== 'RESOLU'; }).length" class="inspector-subblock">
+                                    <div class="field-group">
+                                        <label for="inc-next-state">Passer à l’étape suivante autorisée</label>
+                                        <select id="inc-next-state" v-model="operatorForm.transitionTarget">
+                                            <option v-for="st in (INCIDENT_GRAPH[inspected.record.state] || []).filter(function(s){ return s !== 'RESOLU'; })" :key="st" :value="st">
+                                                {{ incidentStateMeta(st).label }}
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="field-group">
+                                        <label for="inc-trans-comment">Motif / commentaire de transition</label>
+                                        <input id="inc-trans-comment" v-model="operatorForm.transitionComment" type="text" placeholder="Préciser l’action en cours…">
+                                    </div>
+                                    <button type="button" class="btn btn--primary" :disabled="!operatorForm.actor.trim() || !operatorForm.transitionTarget" @click="submitIncidentTransition">
+                                        Appliquer la transition → {{ incidentStateMeta(operatorForm.transitionTarget).label }}
+                                    </button>
+                                </div>
+
+                                <!-- Résolution (uniquement depuis EN_VALIDATION) -->
+                                <div v-if="inspected.record.state === 'EN_VALIDATION'" class="inspector-subblock">
+                                    <div class="field-group">
+                                        <label for="inc-res-comment">Constat de résolution (obligatoire pour passer à Résolu)</label>
+                                        <textarea id="inc-res-comment" v-model="operatorForm.resolutionComment" rows="2" placeholder="Décrire le correctif appliqué et la vérification du retour au nominal…"></textarea>
+                                    </div>
+                                    <button type="button" class="btn btn--primary" :disabled="!operatorForm.actor.trim() || !operatorForm.resolutionComment.trim()" @click="submitIncidentResolution">
+                                        Valider et résoudre l’incident
+                                    </button>
+                                </div>
+
+                                <!-- Ajout d'une note -->
+                                <div class="inspector-subblock">
+                                    <div class="field-group">
+                                        <label for="inc-note-comment">Ajouter une note au dossier</label>
+                                        <textarea id="inc-note-comment" v-model="operatorForm.noteComment" rows="2" placeholder="Observation, ticket externe, mesure conservatoire…"></textarea>
+                                    </div>
+                                    <button type="button" class="btn" :disabled="!operatorForm.actor.trim() || !operatorForm.noteComment.trim()" @click="submitIncidentNote">
+                                        Enregistrer la note
+                                    </button>
+                                </div>
+                            </section>
+
+                            <!-- Objets liés cliquables (Flux, Anomalies, Événements) -->
+                            <section v-if="inspected.record.links && inspected.record.links.length" class="inspector-section">
+                                <h3>Objets liés (Navigation adressable)</h3>
+                                <ul class="related-chips">
+                                    <li v-for="lnk in inspected.record.links" :key="lnk.target_kind + ':' + lnk.target_id">
+                                        <button type="button" class="related-chip" @click="inspectObject(lnk.target_kind, lnk.target_id)">
+                                            <span>{{ lnk.target_kind === 'flow' ? 'Flux' : (lnk.target_kind === 'anomaly' ? 'Anomalie' : 'Événement') }} · {{ lnk.target_id }} →</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Journal opérateur ({{ inspected.record.actions.length }})</h3>
+                                <ul v-if="inspected.record.actions.length" class="inspector-list">
+                                    <li v-for="act in inspected.record.actions" :key="act.action_id">
+                                        <span class="mono">{{ formatDateTime(act.created_at) }}</span> · <strong>{{ act.actor }}</strong> : {{ act.comment }}
+                                    </li>
+                                </ul>
+                                <p v-else class="cell-sub">Aucune note enregistrée.</p>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Historique des états</h3>
+                                <ul class="inspector-list">
+                                    <li v-for="h in inspected.record.history" :key="h.history_id">
+                                        <span class="mono">{{ formatDateTime(h.changed_at) }}</span> · {{ incidentStateMeta(h.from_state).label }} → <strong>{{ incidentStateMeta(h.to_state).label }}</strong> par {{ h.actor }} <span v-if="h.reason">({{ h.reason }})</span>
+                                    </li>
+                                </ul>
+                            </section>
+                        </template>
+
+                        <!-- 4. DÉTAIL ALERTE -->
+                        <template v-else-if="inspected.kind === 'alert'">
+                            <section class="inspector-section">
+                                <h3>Informations de l’alerte</h3>
+                                <dl class="facts-grid">
+                                    <dt>Origine</dt><dd>{{ inspected.record.plan === 'flow' ? 'Flux métier' : 'Appareil terrain' }}</dd>
+                                    <dt>Objet source</dt>
+                                    <dd>
+                                        <button
+                                            type="button"
+                                            class="related-chip"
+                                            @click="inspected.record.plan === 'flow' ? inspectObject('incident', inspected.record.incident_id) : inspectObject('device', inspected.record.source_id)"
+                                        >
+                                            {{ inspected.record.plan === 'flow' ? 'Incident ' + inspected.record.incident_id : 'Appareil ' + inspected.record.subject_name }} →
+                                        </button>
+                                    </dd>
+                                    <dt>Détail</dt><dd>{{ inspected.record.detail }}</dd>
+                                    <dt>Ouverte le</dt><dd class="mono">{{ formatDateTime(inspected.record.opened_at) }}</dd>
+                                    <dt>Accusé de réception</dt>
+                                    <dd>{{ inspected.record.acknowledged_by ? (inspected.record.acknowledged_by + ' le ' + formatDateTime(inspected.record.acknowledged_at)) : 'Non acquittée' }}</dd>
+                                </dl>
+                            </section>
+
+                            <section v-if="inspected.record.status === 'open'" class="inspector-section">
+                                <h3>Acquitter la notification</h3>
+                                <div class="field-group">
+                                    <label for="alert-ack-actor">Opérateur</label>
+                                    <input id="alert-ack-actor" v-model="operatorForm.ackActor" type="text">
+                                </div>
+                                <button type="button" class="btn btn--primary" :disabled="!operatorForm.ackActor.trim()" @click="acknowledgeInspectedAlert">
+                                    Accuser réception
+                                </button>
+                            </section>
+
+                            <section class="inspector-section">
+                                <h3>Tentatives de livraison Microsoft Teams</h3>
+                                <ul class="inspector-list">
+                                    <li v-for="del in inspected.record.deliveries" :key="del.delivery_id">
+                                        Tentative #{{ del.attempt }} · Statut : <strong>{{ del.status }}</strong> (HTTP {{ del.http_status }})
+                                    </li>
+                                </ul>
+                            </section>
+                        </template>
+
+                        <!-- 5. DÉTAIL ANOMALIE -->
+                        <template v-else-if="inspected.kind === 'anomaly'">
+                            <section class="inspector-section">
+                                <h3>Caractérisation de l’écart</h3>
+                                <dl class="facts-grid">
+                                    <dt>Flux métier</dt>
+                                    <dd>
+                                        <button type="button" class="related-chip" @click="inspectObject('flow', inspected.record.flow_id)">
+                                            Flux · {{ inspected.record.flow_id }} →
+                                        </button>
+                                    </dd>
+                                    <dt>Clause du contrat</dt><dd class="mono">{{ inspected.record.clause_id }}</dd>
+                                    <dt>Signature d’erreur</dt><dd class="mono">{{ inspected.record.error_signature }}</dd>
+                                    <dt>Nombre d’occurrences</dt><dd class="mono"><strong>{{ inspected.record.occurrence_count }}</strong></dd>
+                                    <dt>Ouverte le</dt><dd class="mono">{{ formatDateTime(inspected.record.opened_at) }}</dd>
+                                    <dt>Fermée le</dt><dd class="mono">{{ inspected.record.closed_at ? formatDateTime(inspected.record.closed_at) : 'Toujours ouverte' }}</dd>
+                                    <dt>Dernier événement lié</dt>
+                                    <dd>
+                                        <button v-if="inspected.record.last_event_id" type="button" class="related-chip" @click="inspectObject('event', inspected.record.last_event_id)">
+                                            Événement · {{ inspected.record.last_event_id }} →
+                                        </button>
+                                    </dd>
+                                </dl>
+                            </section>
+                        </template>
+
+                        <!-- 6. DÉTAIL ÉVÉNEMENT & PAYLOAD JSON -->
+                        <template v-else-if="inspected.kind === 'event'">
+                            <section class="inspector-section">
+                                <h3>Fait technique immuable (watchdog.event.v1)</h3>
+                                <dl class="facts-grid">
+                                    <dt>Horodatage UTC</dt><dd class="mono">{{ inspected.record.timestamp }}</dd>
+                                    <dt>Type</dt><dd class="mono">{{ inspected.record.event_type }}</dd>
+                                    <dt>Statut</dt><dd class="mono">{{ inspected.record.status }}</dd>
+                                    <dt>Flux métier</dt>
+                                    <dd>
+                                        <button type="button" class="related-chip" @click="inspectObject('flow', inspected.record.flow_id)">
+                                            Flux · {{ inspected.record.flow_id }} →
+                                        </button>
+                                    </dd>
+                                    <dt>Producteur</dt><dd class="mono">{{ inspected.record.producer }}</dd>
+                                    <dt>Chaîne</dt><dd class="mono">{{ inspected.record.source_id }} → {{ inspected.record.connector_id }} → {{ inspected.record.destination_id }}</dd>
+                                    <dt>Volume (records)</dt><dd class="mono">{{ inspected.record.payload && inspected.record.payload.records !== undefined ? inspected.record.payload.records : 'Non renseigné' }}</dd>
+                                    <dt>Signature d’erreur</dt><dd class="mono">{{ inspected.record.error_signature || 'Aucune (nominal)' }}</dd>
+                                </dl>
+                            </section>
+
+                            <section class="inspector-section">
+                                <div class="flex-between">
+                                    <h3>Payload JSON brut</h3>
+                                    <button type="button" class="btn btn--xs" @click="copyIdentifier(JSON.stringify(inspected.record.payload, null, 2))">Copier le JSON</button>
+                                </div>
+                                <pre class="payload-pre"><code>{{ JSON.stringify(inspected.record.payload, null, 2) }}</code></pre>
+                            </section>
+                        </template>
+                    </div>
+                </aside>
+            </div>
+
+            <!-- ==============================================================
+                 PALETTE DE COMMANDES (Ctrl+K — 100% Française)
+                 ============================================================== -->
+            <div v-if="paletteOpen" class="palette-backdrop" @mousedown.self="closePalette">
+                <section id="palette-dialog-box" class="palette-dialog" role="dialog" aria-modal="true" aria-labelledby="palette-title">
+                    <div class="palette-input-wrap">
+                        <span id="palette-title" class="sr-only">Navigation et recherche rapide</span>
+                        <input
+                            v-model="paletteQuery"
+                            class="palette-input"
+                            type="search"
+                            placeholder="Rechercher un flux, un appareil, un incident, une alerte, un événement…"
+                            autofocus
+                        >
+                        <button type="button" class="btn btn--xs" @click="closePalette">Échap</button>
+                    </div>
+                    <div class="palette-meta-bar">
+                        <span>{{ paletteQuery.trim() ? 'Résultats dans les données chargées' : 'Destinations rapides' }}</span>
+                        <span>↑↓ Naviguer · Entrée Ouvrir</span>
+                    </div>
+                    <ul class="palette-list" role="listbox">
+                        <li v-for="(item, idx) in paletteItems" :key="item.kind + ':' + item.id">
+                            <button
+                                type="button"
+                                class="palette-option"
+                                :class="{ 'is-active': idx === paletteIndex }"
+                                @mouseenter="paletteIndex = idx"
+                                @click="selectPaletteItem(item)"
+                            >
+                                <span>
+                                    <span class="palette-type">{{ item.typeBadge }}</span>
+                                    <strong>{{ item.title }}</strong>
+                                    <span class="cell-sub"> · {{ item.subtitle }}</span>
+                                </span>
+                                <span class="cell-sub">{{ item.meta }}</span>
+                            </button>
+                        </li>
+                    </ul>
+                </section>
+            </div>
+
+            <!-- ==============================================================
+                 ASSISTANT D'ENRÔLEMENT D'APPAREIL
+                 ============================================================== -->
+            <div v-if="enrollOpen" class="palette-backdrop" @mousedown.self="enrollOpen = false">
+                <section id="enroll-dialog-box" class="palette-dialog modal-card" role="dialog" aria-modal="true" aria-labelledby="enroll-modal-title">
+                    <div class="flex-between">
+                        <div>
+                            <p class="eyebrow">Onboarding passerelle</p>
+                            <h2 id="enroll-modal-title">Connecter un appareil</h2>
+                        </div>
+                        <button type="button" class="btn btn--xs" @click="enrollOpen = false">Fermer ✕</button>
+                    </div>
+                    <div class="field-group">
+                        <label for="enroll-uuid-input">UUID de la passerelle (min. 6 caractères)</label>
+                        <input id="enroll-uuid-input" v-model="enrollForm.uuid" type="text" class="mono" placeholder="ex. a1b2c3d4e5f6…">
+                    </div>
+                    <div class="field-group">
+                        <label for="enroll-name-input">Nom affiché</label>
+                        <input id="enroll-name-input" v-model="enrollForm.name" type="text" placeholder="ex. GW-BACNET-SITE-NORD">
+                    </div>
+                    <div class="flex-row-gap" style="justify-content:flex-end;">
+                        <button type="button" class="btn" @click="enrollOpen = false">Annuler</button>
+                        <button type="button" class="btn btn--primary" :disabled="enrollForm.uuid.trim().length < 6" @click="submitEnrollDevice">Enregistrer et inspecter</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </script>
+
+    <script src="../vendor/vue.global.prod.js"></script>
+    <script src="../utils/formatters.js"></script>
+    <script src="../utils/flows-formatters.js"></script>
+    <script src="../utils/activity-selector.js"></script>
+    <script src="../components/overview-page.js"></script>
+    <script src="./prototype-router.js"></script>
+    <script src="./prototype-data.js"></script>
+    <script src="./prototype-app.js"></script>
+</body>
+</html>

@@ -8,10 +8,12 @@
     var flowsStore = fleet.createFlowsStore(Vue);
     var anomaliesStore = fleet.createAnomaliesStore(Vue);
     var eventsStore = fleet.createEventsStore(Vue);
+    var alertsStore = fleet.createAlertsStore(Vue);
     var client;
     var flowsClient;
     var anomaliesClient;
     var eventsClient;
+    var alertsClient;
 
     var Root = {
         name: 'WatchdogHubApp',
@@ -45,7 +47,8 @@
                     flows: flowsStore.state.flows,
                     anomalies: anomaliesStore.state.anomalies,
                     events: eventsStore.state.events,
-                    devices: store.state.devices
+                    devices: store.state.devices,
+                    alerts: alertsStore.state.alerts
                 });
             });
 
@@ -60,7 +63,9 @@
             var filteredDevices = Vue.computed(function () {
                 var query = store.state.query.trim().toLocaleLowerCase('fr-FR');
                 var filtered = store.state.devices.filter(function (device) {
-                    var matchesState = store.state.statusFilter === 'all' || device.state === store.state.statusFilter;
+                    var matchesState = store.state.statusFilter === 'all'
+                        || (store.state.statusFilter === 'alerts' && device.state !== 'ok' && device.state !== 'unknown')
+                        || device.state === store.state.statusFilter;
                     var matchesSource = store.state.sourceFilter === 'all'
                         || (store.state.sourceFilter === 'balena' && !device.online)
                         || (store.state.sourceFilter === 'heartbeat' && !device.hbOk)
@@ -106,13 +111,94 @@
                 return (store.state.admin && store.state.admin.fleetName) || 'Watchdog Hub';
             });
 
+            // Objet demandé par un lien profond mais absent du relevé courant (404)
+            var routeMissing = Vue.ref(null);
+            var routeNotice = Vue.ref('');
+
             function viewFromHash() {
-                return router.parse(global.location.hash);
+                return router.parseCanonical(global.location.hash);
             }
 
-            function setView(view, incidentId) {
+            function findBy(list, key, id) {
+                var found = (list || []).filter(function (row) { return row[key] === id; });
+                return found[0] || null;
+            }
+
+            /**
+             * Résout l'identifiant d'un lien profond canonique (#vue/{id}) contre les relevés chargés.
+             * Distingue un objet introuvable (404) d'un relevé pas encore arrivé (attente).
+             */
+            function resolveRouteObject(route) {
+                route = route || viewFromHash();
+                if (!route.objectId || store.state.view !== route.view) return;
+                var id = route.objectId;
+                if (route.view === 'flows') {
+                    var flow = findBy(flowsStore.state.flows, 'flow_id', id);
+                    if (flow) selectedFlow.value = flow;
+                    else if (flowsStore.state.snapshot || flowsStore.state.flows.length) {
+                        routeMissing.value = { view: route.view, kind: 'flux métier', id: id };
+                    }
+                    return;
+                }
+                if (route.view === 'fleet') {
+                    var device = findBy(store.state.devices, 'uuid', id);
+                    if (device) store.selectDevice(device);
+                    else if (store.state.snapshot) {
+                        routeMissing.value = { view: route.view, kind: 'appareil', id: id };
+                    }
+                    return;
+                }
+                if (route.view === 'incidents') {
+                    var incident = findBy(flowsStore.state.incidents, 'incident_id', id);
+                    if (!incident && flowsStore.state.snapshot && flowsStore.state.incidents.length) {
+                        routeMissing.value = { view: route.view, kind: 'incident', id: id };
+                    }
+                    return;
+                }
+                // Alertes, anomalies et événements disposent d'un détail serveur : demande directe.
+                if (route.view === 'alerts' && !(alertsStore.state.selected && alertsStore.state.selected.alert && alertsStore.state.selected.alert.alert_id === id)) {
+                    selectAlert(findBy(alertsStore.state.alerts, 'alert_id', id) || { alert_id: id });
+                    return;
+                }
+                if (route.view === 'anomalies' && !(anomaliesStore.state.selectedAnomaly && anomaliesStore.state.selectedAnomaly.anomaly_id === id)) {
+                    selectAnomaly(findBy(anomaliesStore.state.anomalies, 'anomaly_id', id) || { anomaly_id: id });
+                    return;
+                }
+                if (route.view === 'events' && !(eventsStore.state.selectedEvent && eventsStore.state.selectedEvent.event_id === id)) {
+                    selectEvent(findBy(eventsStore.state.events, 'event_id', id) || { event_id: id });
+                }
+            }
+
+            // Synchronise l'adresse canonique avec la sélection courante de chaque type d'objet.
+            function syncObjectHash(view, objectId) {
+                var route = viewFromHash();
+                if (route.view !== view) return;
+                var target = router.formatCanonical(view, objectId || null);
+                if (global.location.hash !== target) global.location.hash = target;
+            }
+
+            Vue.watch(selectedFlow, function (flow) {
+                syncObjectHash('flows', flow && flow.flow_id);
+            });
+            Vue.watch(function () { return store.state.selectedDevice; }, function (device) {
+                syncObjectHash('fleet', device && device.uuid);
+            });
+            Vue.watch(function () { return flowsStore.state.selectedIncident; }, function (detail) {
+                syncObjectHash('incidents', detail && detail.incident && detail.incident.incident_id);
+            });
+            Vue.watch(function () { return alertsStore.state.selected; }, function (detail) {
+                syncObjectHash('alerts', detail && detail.alert && detail.alert.alert_id);
+            });
+            Vue.watch(function () { return anomaliesStore.state.selectedAnomaly; }, function (anomaly) {
+                syncObjectHash('anomalies', anomaly && anomaly.anomaly_id);
+            });
+            Vue.watch(function () { return eventsStore.state.selectedEvent; }, function (event) {
+                syncObjectHash('events', event && event.event_id);
+            });
+
+            function setView(view, objectId) {
                 store.setView(view);
-                var nextHash = router.format(view, incidentId);
+                var nextHash = router.formatCanonical(view, objectId);
                 if (global.location.hash !== nextHash) {
                     global.location.hash = nextHash;
                     return;
@@ -120,6 +206,7 @@
                 if (view === 'overview' || view === 'flows' || view === 'incidents') loadFlows(false);
                 if (view === 'anomalies') loadAnomalies(false);
                 if (view === 'events') loadEvents(false);
+                if (view === 'alerts') loadAlerts(false);
                 if (view === 'overview') {
                     loadAnomalies(false);
                     loadEvents(false);
@@ -143,17 +230,33 @@
 
             function onHashChange() {
                 var route = viewFromHash();
+                routeMissing.value = null;
+                routeNotice.value = route.isKnownView
+                    ? ''
+                    : 'Route inconnue « #' + route.rawRequestedView + ' » : redirection vers la vue d’ensemble.';
                 store.setView(route.view);
+                if (route.view !== 'incidents' || !route.incidentId) {
+                    flowsStore.selectIncident(null);
+                }
+                if (!route.objectId) {
+                    if (route.view === 'flows' && selectedFlow.value) selectedFlow.value = null;
+                    if (route.view === 'fleet' && store.state.selectedDevice) store.selectDevice(null);
+                    if (route.view === 'alerts' && alertsStore.state.selected) alertsStore.selectAlert(null);
+                    if (route.view === 'anomalies' && anomaliesStore.state.selectedAnomaly) anomaliesStore.selectAnomaly(null);
+                    if (route.view === 'events' && eventsStore.state.selectedEvent) eventsStore.selectEvent(null);
+                }
                 if (route.view === 'overview' || route.view === 'flows' || route.view === 'incidents') {
                     loadFlows(false);
                 }
                 if (route.view === 'anomalies') loadAnomalies(false);
                 if (route.view === 'events') loadEvents(false);
+                if (route.view === 'alerts') loadAlerts(false);
                 if (route.view === 'overview') {
                     loadAnomalies(false);
                     loadEvents(false);
                 }
                 if (route.incidentId) flowsClient.requestIncident(route.incidentId);
+                if (route.objectId && route.view !== 'incidents') resolveRouteObject(route);
             }
 
             function announceSnapshot() {
@@ -187,15 +290,15 @@
                 incidentOpener.value = opener || null;
                 flowsStore.beginMutation();
                 flowsClient.requestIncident(incident.incident_id);
-                if (store.state.view !== 'incidents' || router.parse(global.location.hash).incidentId !== incident.incident_id) {
-                    global.location.hash = router.format('incidents', incident.incident_id);
+                if (store.state.view !== 'incidents' || viewFromHash().objectId !== incident.incident_id) {
+                    global.location.hash = router.formatCanonical('incidents', incident.incident_id);
                 }
             }
 
             function closeIncident() {
                 flowsStore.selectIncident(null);
-                if (router.parse(global.location.hash).incidentId) {
-                    global.location.hash = router.format('incidents');
+                if (viewFromHash().objectId && viewFromHash().view === 'incidents') {
+                    global.location.hash = router.formatCanonical('incidents');
                 }
             }
 
@@ -219,7 +322,8 @@
             }
 
             function showFlowIncidents(flow) {
-                flowsStore.state.query = flow.flow_id;
+                flowsStore.state.incidentQuery = flow.flow_id;
+                flowsStore.state.incidentStateFilter = 'active';
                 setView('incidents');
             }
 
@@ -279,6 +383,44 @@
                 openEventFromFlow(event);
             }
 
+            var alertOpener = Vue.ref(null);
+
+            function loadAlerts(refreshing) {
+                if (alertsStore.state.loading || alertsStore.state.refreshing) return;
+                alertsStore.beginLoad(refreshing);
+                if (refreshing) liveMessage.value = 'Actualisation des alertes demandée.';
+                alertsClient.requestSnapshot();
+            }
+
+            function selectAlert(alert, opener) {
+                if (!alert) {
+                    alertsStore.selectAlert(null);
+                    return;
+                }
+                alertOpener.value = opener || null;
+                alertsStore.beginLoad(false);
+                alertsClient.requestDetail(alert.alert_id);
+            }
+
+            function acknowledgeAlert(actor) {
+                var selected = alertsStore.state.selected && alertsStore.state.selected.alert;
+                if (!selected) return;
+                alertsStore.beginMutation();
+                liveMessage.value = 'Enregistrement de l’accusé.';
+                alertsClient.acknowledge(selected.alert_id, actor);
+            }
+
+            function openAlertIncident(alert) {
+                if (alert && alert.incident_id) openIncident({ incident_id: alert.incident_id });
+            }
+
+            function openAlertDevice(alert) {
+                var uuid = alert && alert.source_id;
+                var found = store.state.devices.filter(function (row) { return row.uuid === uuid; })[0];
+                setView('fleet');
+                if (found) openDetail(found);
+            }
+
             function openCommandPalette() {
                 commandPaletteOpen.value = true;
             }
@@ -320,10 +462,22 @@
                         return candidate.uuid === item.id;
                     })[0];
                     if (device) openDetail(device);
+                    return;
+                }
+                if (view === 'alerts') {
+                    setView(view);
+                    var alertRow = alertsStore.state.alerts.filter(function (candidate) {
+                        return candidate.alert_id === item.id;
+                    })[0];
+                    if (alertRow) selectAlert(alertRow);
                 }
             }
 
             function handleGlobalKeydown(event) {
+                if (event.key === 'Escape' && store.state.view === 'flows' && selectedFlow.value) {
+                    selectedFlow.value = null;
+                    return;
+                }
                 if (event.key === 'Escape' && eventsStore.state.selectedEvent) {
                     eventsStore.selectEvent(null);
                     return;
@@ -355,6 +509,7 @@
                     }
                     if (store.state.view === 'anomalies') loadAnomalies(true);
                     if (store.state.view === 'events') loadEvents(true);
+                    if (store.state.view === 'alerts') loadAlerts(true);
                     if (store.state.view === 'overview') {
                         loadAnomalies(true);
                         loadEvents(true);
@@ -364,7 +519,7 @@
                 setView(command);
                 if (command === 'incidents' || command === 'flows') {
                     Vue.nextTick(function () {
-                        var search = global.document.getElementById('flows-search');
+                        var search = global.document.getElementById(command === 'incidents' ? 'incidents-search' : 'flows-search');
                         if (search) search.focus();
                     });
                 }
@@ -449,6 +604,7 @@
             client = fleet.createUibuilderClient({
                 onSnapshot: function (payload) {
                     if (store.acceptSnapshot(payload)) announceSnapshot();
+                    resolveRouteObject();
                 },
                 onConnection: function (connected) {
                     var wasConnected = store.state.connected;
@@ -465,6 +621,7 @@
                         liveMessage.value = flowsStore.state.flows.length + ' flux chargés.';
                         if (selected) flowsClient.requestIncident(selected.incident_id);
                     }
+                    resolveRouteObject();
                 },
                 onFlowsIncident: function (payload) {
                     if (flowsStore.acceptIncident(payload)) {
@@ -476,6 +633,7 @@
                     if (anomaliesStore.acceptSnapshot(payload)) {
                         liveMessage.value = anomaliesStore.state.anomalies.length + ' anomalies chargées.';
                     }
+                    resolveRouteObject();
                 },
                 onAnomaliesDetail: function (payload) {
                     if (anomaliesStore.acceptDetail(payload)) {
@@ -487,13 +645,28 @@
                     if (eventsStore.acceptSnapshot(payload)) {
                         liveMessage.value = eventsStore.state.events.length + ' événements chargés.';
                     }
+                    resolveRouteObject();
                 },
                 onEventsDetail: function (payload) {
                     if (eventsStore.acceptDetail(payload)) {
                         liveMessage.value = 'Détail de l’événement chargé.';
                     }
                 },
-                onEventsError: eventsStore.setError
+                onEventsError: eventsStore.setError,
+                onAlertsSnapshot: function (payload) {
+                    if (alertsStore.acceptSnapshot(payload)) {
+                        var openCount = Number(payload.summary && payload.summary.open) || 0;
+                        liveMessage.value = openCount + (openCount === 1 ? ' alerte ouverte.' : ' alertes ouvertes.');
+                    }
+                    resolveRouteObject();
+                },
+                onAlertsDetail: function (payload) {
+                    if (alertsStore.acceptDetail(payload)) {
+                        liveMessage.value = 'Détail de l’alerte chargé.';
+                        loadAlerts(false);
+                    }
+                },
+                onAlertsError: alertsStore.setError
             });
             flowsClient = fleet.createFlowsUibuilderClient({
                 onError: flowsStore.setError
@@ -503,6 +676,9 @@
             });
             eventsClient = fleet.createEventsUibuilderClient({
                 onError: eventsStore.setError
+            });
+            alertsClient = fleet.createAlertsUibuilderClient({
+                onError: alertsStore.setError
             });
 
             Vue.onMounted(function () {
@@ -516,17 +692,21 @@
                 flowsClient.start();
                 anomaliesClient.start();
                 eventsClient.start();
+                alertsClient.start();
                 client.start();
+                loadAlerts(false);
                 if (initialRoute.view === 'overview' || initialRoute.view === 'flows' || initialRoute.view === 'incidents') {
                     loadFlows(false);
                 }
                 if (initialRoute.view === 'anomalies') loadAnomalies(false);
                 if (initialRoute.view === 'events') loadEvents(false);
+                if (initialRoute.view === 'alerts') loadAlerts(false);
                 if (initialRoute.view === 'overview') {
                     loadAnomalies(false);
                     loadEvents(false);
                 }
                 if (initialRoute.incidentId) flowsClient.requestIncident(initialRoute.incidentId);
+                else if (initialRoute.objectId) resolveRouteObject(initialRoute);
             });
 
             Vue.onBeforeUnmount(function () {
@@ -540,6 +720,7 @@
                 flowsState: flowsStore.state,
                 anomaliesState: anomaliesStore.state,
                 eventsState: eventsStore.state,
+                alertsState: alertsStore.state,
                 activity: activity,
                 commandPaletteItems: commandPaletteItems,
                 now: now,
@@ -550,6 +731,7 @@
                 commandPaletteOpen: commandPaletteOpen,
                 enrollOpener: enrollOpener,
                 incidentOpener: incidentOpener,
+                alertOpener: alertOpener,
                 selectedFlow: selectedFlow,
                 filteredDevices: filteredDevices,
                 pagedDevices: pagedDevices,
@@ -557,14 +739,29 @@
                 pageSize: pageSize,
                 detailOpener: detailOpener,
                 liveMessage: liveMessage,
+                activityPartial: activityPartial,
+                routeMissing: routeMissing,
+                routeNotice: routeNotice,
                 setView: setView,
                 refresh: refresh,
                 retry: retry,
                 loadFlows: loadFlows,
+                loadAnomalies: loadAnomalies,
+                loadEvents: loadEvents,
+                loadAlerts: loadAlerts,
+                selectAlert: selectAlert,
+                acknowledgeAlert: acknowledgeAlert,
+                openAlertIncident: openAlertIncident,
+                openAlertDevice: openAlertDevice,
+                selectAnomaly: selectAnomaly,
+                selectAnomalyFlow: selectAnomalyFlow,
+                selectEvent: selectEvent,
+                selectEventFlow: selectEventFlow,
                 openView: openView,
                 openIncident: openIncident,
                 openIncidentFlow: openIncidentFlow,
                 closeIncident: closeIncident,
+                openRelated: openRelated,
                 showFlowIncidents: showFlowIncidents,
                 selectFlow: selectFlow,
                 openAnomalyFromFlow: openAnomalyFromFlow,
@@ -589,10 +786,12 @@
         },
         template:
             '<div class="app-shell">' +
-                '<fleet-header :fleet-name="fleetName" :generated-at="state.snapshot && state.snapshot.generatedAt" :last-evaluation-at="state.snapshot && state.snapshot.lastEvaluationAt" :next-poll-at="state.snapshot && state.snapshot.nextPollAt" :now="now" :stale="stale" :connected="state.connected === true" :source-status="state.sourceStatus" :flow-summary="flowsState.summary" :fleet-summary="state.summary" :inert="modalOpen ? true : undefined" @open-command="openCommandPalette"></fleet-header>' +
-                '<app-nav :view="state.view" :incidents="flowsState.summary.incidentsActive || 0" :flows="(flowsState.summary.degraded || 0) + (flowsState.summary.down || 0)" :anomalies="anomaliesState.anomalies.filter(function (anomaly) { return anomaly.status === \'open\'; }).length" :events="eventsState.events.length" :fleet-alerts="state.summary.alerts || 0" :inert="modalOpen ? true : undefined" @update:view="setView"></app-nav>' +
+                '<fleet-header :fleet-name="fleetName" :generated-at="state.snapshot && state.snapshot.generatedAt" :last-evaluation-at="state.snapshot && state.snapshot.lastEvaluationAt" :next-poll-at="state.snapshot && state.snapshot.nextPollAt" :now="now" :stale="stale" :connected="state.connected === true" :source-status="state.sourceStatus" :inert="modalOpen ? true : undefined" @open-command="openCommandPalette"></fleet-header>' +
+                '<app-nav :view="state.view" :incidents="flowsState.summary.incidentsActive || 0" :flows="(flowsState.summary.degraded || 0) + (flowsState.summary.down || 0) + (flowsState.summary.unknown || 0)" :anomalies="anomaliesState.anomalies.filter(function (anomaly) { return anomaly.status === \'open\'; }).length" :events="eventsState.events.length" :fleet-alerts="state.summary.alerts || 0" :alert-count="alertsState.summary.open || 0" :inert="modalOpen ? true : undefined" @update:view="setView"></app-nav>' +
                 '<main id="main-content" class="dashboard" tabindex="-1" :aria-busy="(state.view === \'overview\' || state.view === \'flows\' || state.view === \'incidents\') ? (flowsState.refreshing || flowsState.mutating ? \'true\' : \'false\') : (state.view === \'anomalies\' ? (anomaliesState.refreshing ? \'true\' : \'false\') : (state.view === \'events\' ? (eventsState.refreshing ? \'true\' : \'false\') : (state.refreshing || state.adminSaving ? \'true\' : \'false\')))" :inert="modalOpen ? true : undefined">' +
                     '<p class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</p>' +
+                    '<ui-banner v-if="routeNotice" kind="info">{{ routeNotice }}</ui-banner>' +
+                    '<ui-banner v-if="routeMissing" kind="info">Objet introuvable (404) : aucun {{ routeMissing.kind }} ne correspond à l’identifiant « {{ routeMissing.id }} » dans le relevé courant.</ui-banner>' +
                     '<ui-banner v-if="state.connected === false" kind="warning">Connexion au serveur interrompue. Reconnexion automatique en cours…</ui-banner>' +
                     '<ui-banner v-if="state.view !== \'flows\' && state.lastError && state.snapshot" kind="error">{{ state.lastError }}</ui-banner>' +
                     '<ui-banner v-if="state.view !== \'flows\' && state.notice" kind="info">{{ state.notice }}</ui-banner>' +
@@ -602,7 +801,12 @@
                         '<state-panel v-else kind="error" title="Configuration indisponible" :message="state.lastError || \'Aucun snapshot n’a été reçu.\'" action-label="Réessayer" @retry="retry"></state-panel>' +
                     '</template>' +
                     '<template v-else-if="state.view === \'overview\'">' +
-                        '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :incidents="flowsState.incidents" :flows="flowsState.flows" :activity="activity" :activity-partial="activityPartial" :recent-transitions="state.recentTransitions" :loading="flowsState.loading || flowsState.refreshing" :connected="state.connected === true" :stale="stale" :now="now" @open-incident="openIncident" @open-view="openView"></overview-page>' +
+                        '<ui-banner v-if="state.lastError && !state.snapshot" kind="error">{{ state.lastError }}</ui-banner>' +
+                        '<ui-banner v-if="flowsState.lastError" kind="error">{{ flowsState.lastError }}</ui-banner>' +
+                        '<ui-banner v-if="anomaliesState.lastError" kind="error">{{ anomaliesState.lastError }}</ui-banner>' +
+                        '<ui-banner v-if="eventsState.lastError" kind="error">{{ eventsState.lastError }}</ui-banner>' +
+                        '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :fleet-known="Boolean(state.snapshot)" :fleet-error="state.lastError" :flows-error="flowsState.lastError" :flows="flowsState.flows" :devices="state.devices" :generated-at="state.snapshot && state.snapshot.generatedAt" :activity="activity" :activity-partial="activityPartial" :recent-transitions="state.recentTransitions" :loading="flowsState.loading || flowsState.refreshing" :connected="state.connected === true" :stale="stale" :now="now" @open-device="openDetail" @open-view="openView"' +
+                        ' :incidents="flowsState.incidents" @open-incident="openIncident"></overview-page>' +
                     '</template>' +
                     '<template v-else-if="state.view === \'flows\' || state.view === \'incidents\'">' +
                         '<flows-page :state="flowsState" :section="state.view" :selected-flow="selectedFlow" :anomalies="anomaliesState.anomalies" :events="eventsState.events" :now="now" @refresh="loadFlows(true)" @retry="loadFlows(false)" @select-incident="openIncident" @select-anomaly="openAnomalyFromFlow" @select-event="openEventFromFlow" @show-incidents="showFlowIncidents" @select-flow="selectFlow"></flows-page>' +
@@ -613,11 +817,16 @@
                     '<template v-else-if="state.view === \'events\'">' +
                         '<events-page :state="eventsState" :flows="flowsState.flows" @refresh="loadEvents(true)" @retry="loadEvents(false)" @select-event="selectEvent" @select-flow="selectEventFlow"></events-page>' +
                     '</template>' +
+                    '<template v-else-if="state.view === \'alerts\'">' +
+                        '<alerts-page :state="alertsState" :detail="alertsState.selected" :opener="alertOpener" @refresh="loadAlerts(true)" @retry="loadAlerts(false)" @select="selectAlert" @acknowledge="acknowledgeAlert"' +
+                        ' @open-incident="openAlertIncident"' +
+                        ' @open-device="openAlertDevice"></alerts-page>' +
+                    '</template>' +
                     '<template v-else-if="state.snapshot">' +
                         '<section class="fleet-command-center" aria-labelledby="fleet-command-title">' +
-                        '<div class="workspace-heading"><p class="eyebrow">Supervision infrastructure</p><h2 id="fleet-command-title">Fleet Command Center</h2><p>État des appareils, connectivité et activité récente à partir du snapshot courant.</p></div>' +
+                        '<div class="workspace-heading"><p class="eyebrow">Infrastructure</p><h2 id="fleet-command-title">Appareils surveillés</h2><p>Passerelles BACnet et Modbus. Les appareils qui demandent une action apparaissent en premier.</p></div>' +
                         '<fleet-kpis :summary="state.summary" :loading="state.refreshing" @filter-status="setFleetStatus"></fleet-kpis>' +
-                        '<fleet-activity :transitions="state.recentTransitions" :pending="state.pendingConfirmations" :now="now"></fleet-activity>' +
+                        '<div class="fleet-devices-heading"><h2>Appareils à surveiller</h2><p>Les appareils nécessitant une attention apparaissent en premier selon leur état courant.</p></div>' +
                         '<filter-bar :query="state.query" :status="state.statusFilter" :source="state.sourceFilter" :sort="state.sortBy" :refreshing="state.refreshing" results-id="fleet-device-results" @update:query="state.query = $event" @update:status="state.statusFilter = $event" @update:source="state.sourceFilter = $event" @update:sort="state.sortBy = $event" @refresh="refresh" @reset="resetFilters"></filter-bar>' +
                         '<p class="results-summary" aria-live="polite" aria-atomic="true">{{ filteredDevices.length }} appareil{{ filteredDevices.length > 1 ? \'s\' : \'\' }} affiché{{ filteredDevices.length > 1 ? \'s\' : \'\' }} sur {{ state.devices.length }}<span v-if="state.refreshing"> — Actualisation…</span></p>' +
                         '<div id="fleet-device-results">' +
@@ -626,6 +835,7 @@
                             '<state-panel v-else-if="state.devices.length" title="Aucun résultat" message="Aucun appareil ne correspond aux critères actuels." action-label="Réinitialiser les filtres" @retry="resetFilters"></state-panel>' +
                             '<state-panel v-else title="Flotte vide" message="Le snapshot ne contient aucun appareil. Utilisez Administration → Connecter un appareil." action-label="Ouvrir l’administration" @retry="setView(\'admin\')"></state-panel>' +
                         '</div>' +
+                        '<fleet-activity :transitions="state.recentTransitions" :pending="state.pendingConfirmations" :now="now"></fleet-activity>' +
                         '</section>' +
                     '</template>' +
                     '<state-panel v-else-if="state.loading" kind="loading" title="Chargement de la flotte" message="Connexion au flux de supervision…" :busy="true"></state-panel>' +

@@ -30,20 +30,13 @@
         methods: {
             meta: formatters.incidentStateMeta,
             formatDateTime: common.formatDateTime,
-            badgeState: function (tone) {
-                if (tone === 'critical') return 'dead';
-                if (tone === 'high') return 'heartbeat_missing';
-                if (tone === 'warning') return 'cloud_down';
-                if (tone === 'ok') return 'ok';
-                return 'unknown';
-            },
             open: function (incident, event) {
                 this.$emit('select', incident, event.currentTarget);
             }
         },
         template:
             '<section class="flows-section" aria-labelledby="incidents-list-title" :aria-busy="refreshing ? \'true\' : \'false\'">' +
-                '<div class="section-heading"><div><p class="eyebrow">Workbench opérateur</p><h2 id="incidents-list-title">Incidents</h2></div><span class="activity-count">{{ incidents.length }} résultat{{ incidents.length > 1 ? \'s\' : \'\' }}</span></div>' +
+                '<div class="section-heading"><h2 id="incidents-list-title">Incidents</h2><span class="activity-count">{{ incidents.length }} résultat{{ incidents.length > 1 ? \'s\' : \'\' }}</span></div>' +
                 '<div v-if="incidents.length" class="incident-workbench">' +
                     '<section v-for="group in groups" :key="group.state" class="incident-group" :aria-label="meta(group.state).label">' +
                         '<h3>{{ meta(group.state).label }} <span>{{ group.incidents.length }}</span></h3>' +
@@ -51,7 +44,7 @@
                             '<button type="button" class="incident-row" :aria-label="\'Ouvrir l’incident \' + incident.incident_id" @click="open(incident, $event)">' +
                                 '<span class="incident-row__identity"><strong>{{ incident.incident_id }}</strong><small>{{ incident.flow_id }}</small></span>' +
                                 '<span class="incident-row__signature">{{ incident.error_signature || \'Signature non disponible\' }}</span>' +
-                                '<span class="incident-row__meta"><status-badge :state="badgeState(meta(incident.state).tone)" :label="meta(incident.state).label"></status-badge><small>{{ formatDateTime(incident.opened_at) }}</small></span>' +
+                                '<span class="incident-row__meta"><span class="status-badge" :class="\'status-badge--\' + meta(incident.state).tone">{{ meta(incident.state).label }}</span><small>{{ formatDateTime(incident.opened_at) }}</small></span>' +
                             '</button>' +
                         '</li></ol>' +
                     '</section>' +

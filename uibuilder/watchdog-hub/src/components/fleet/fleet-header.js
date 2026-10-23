@@ -15,38 +15,55 @@
             lastEvaluationAt: { type: [String, Number], default: null },
             nextPollAt: { type: [String, Number], default: null },
             now: { type: Number, default: Date.now },
-            fleetName: { type: String, default: 'Watchdog Hub' },
-            flowSummary: { type: Object, default: function () { return {}; } },
-            fleetSummary: { type: Object, default: function () { return {}; } }
+            fleetName: { type: String, default: 'Watchdog Hub' }
+        },
+        data: function () {
+            return { lightTheme: false };
+        },
+        mounted: function () {
+            this.applyTheme(this.readTheme(), false);
         },
         computed: {
             balenaState: function () {
-                return this.sourceStatus.balena && this.sourceStatus.balena.ok ? 'ok' : 'dead';
+                var balena = this.sourceStatus.balena;
+                if (!balena || typeof balena.ok !== 'boolean') return 'unknown';
+                return balena.ok ? 'ok' : 'dead';
             },
             mqttState: function () {
-                return this.sourceStatus.mqtt && this.sourceStatus.mqtt.ok ? 'ok' : 'heartbeat_missing';
+                var mqtt = this.sourceStatus.mqtt;
+                if (!mqtt || typeof mqtt.ok !== 'boolean') return 'unknown';
+                return mqtt.ok ? 'ok' : 'heartbeat_missing';
             },
             teamsState: function () {
                 var teams = this.sourceStatus.teams || {};
                 if (!teams.configured) return 'unknown';
                 if (teams.lastError) return 'heartbeat_missing';
                 return teams.lastSuccessAt ? 'ok' : 'unknown';
-            },
-            systemState: function () {
-                if (!this.connected) return { label: 'DISCONNECTED', state: 'dead' };
-                if (!this.generatedAt) return { label: 'UNKNOWN', state: 'unknown' };
-                if ((this.flowSummary.down || 0) > 0) return { label: 'CRITICAL', state: 'dead' };
-                if ((this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || (this.fleetSummary.alerts || 0) > 0) {
-                    return { label: 'DEGRADED', state: 'cloud_down' };
-                }
-                return { label: 'HEALTHY', state: 'ok' };
-            },
-            affectedFlows: function () {
-                return (this.flowSummary.degraded || 0) + (this.flowSummary.down || 0);
             }
         },
         methods: {
             formatDateTime: formatters.formatDateTime,
+            readTheme: function () {
+                var saved = '';
+                try {
+                    saved = global.localStorage ? global.localStorage.getItem('watchdog-theme') : '';
+                } catch (error) {
+                    saved = '';
+                }
+                if (saved === 'dark' || saved === 'light') return saved;
+                var current = document.documentElement.getAttribute('data-theme');
+                return current === 'light' ? 'light' : 'dark';
+            },
+            applyTheme: function (theme, persist) {
+                var next = theme === 'dark' ? 'dark' : 'light';
+                this.lightTheme = next === 'light';
+                document.documentElement.setAttribute('data-theme', next);
+                document.documentElement.style.colorScheme = next;
+                if (persist && global.localStorage) global.localStorage.setItem('watchdog-theme', next);
+            },
+            toggleTheme: function () {
+                this.applyTheme(this.lightTheme ? 'dark' : 'light', true);
+            },
             formatRelative: function (value) {
                 return formatters.formatRelative(value, this.now);
             },
@@ -57,34 +74,40 @@
         },
         template:
             '<header class="page-header">' +
-                '<div class="header-content">' +
+                '<div class="header-content header-bar">' +
                     '<div class="header-identity">' +
-                        '<div><p class="eyebrow">Fleet Command Center</p><h1>{{ fleetName }}</h1></div>' +
-                        '<status-badge :state="systemState.state" :label="systemState.label"></status-badge>' +
+                        '<span class="brand-mark" aria-hidden="true">WH</span>' +
+                        '<div class="header-titles"><p class="eyebrow header-eyebrow">Siège de supervision</p><h1>{{ fleetName }}</h1></div>' +
                     '</div>' +
-                    '<div class="header-meta header-meta--primary">' +
-                        '<span class="system-summary">{{ flowSummary.incidentsActive || 0 }} incidents</span>' +
-                        '<span class="system-summary">{{ affectedFlows }} flux</span>' +
-                        '<span class="system-summary">{{ fleetSummary.alerts || 0 }} alertes flotte</span>' +
-                        '<span class="system-summary" :title="formatDateTime(generatedAt)">Snapshot {{ formatRelative(generatedAt) }}</span>' +
-                        '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'LIVE\' : \'OFFLINE\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
-                        '<button class="header-command" type="button" @click="$emit(\'open-command\')">Commandes <kbd>Ctrl K</kbd></button>' +
+                    '<div class="header-telemetry-inline" aria-label="Télémétrie temps réel">' +
+                        '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'Canal temps réel connecté\' : \'Canal hors ligne\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
+                        '<status-badge v-if="stale" state="heartbeat_missing" label="Données anciennes"></status-badge>' +
+                        '<span class="telemetry-divider" aria-hidden="true"></span>' +
+                        '<status-badge :state="balenaState" label="Balena" announce-state></status-badge>' +
+                        '<status-badge :state="mqttState" label="MQTT" announce-state></status-badge>' +
+                        '<status-badge :state="teamsState" label="Teams" announce-state></status-badge>' +
+                        '<span class="telemetry-divider" aria-hidden="true"></span>' +
+                        '<span class="system-summary header-timestamp" :title="formatDateTime(generatedAt)">Dernier relevé {{ formatRelative(generatedAt) }}</span>' +
+                    '</div>' +
+                    '<div class="header-meta header-meta--primary header-actions">' +
+                        '<button class="header-command command-trigger" type="button" @click="$emit(\'open-command\')"><span>Rechercher ou aller à...</span> <kbd>Ctrl K</kbd></button>' +
+                        '<button class="header-theme-toggle theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Thème clair actif. Activer le thème sombre.\' : \'Thème sombre actif. Activer le thème clair.\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair, passer au sombre\' : \'Thème sombre, passer au clair\' }}</button>' +
                     '</div>' +
                 '</div>' +
-                '<details class="header-secondary">' +
-                    '<summary>Sources et télémétrie</summary>' +
+                '<details class="header-secondary header-telemetry-drawer">' +
+                    '<summary>Sources, fraîcheur et cadencement des relevés</summary>' +
                     '<div class="header-sources" aria-label="État des sources">' +
                         '<status-badge :state="balenaState" label="Balena" announce-state></status-badge>' +
                         '<status-badge :state="mqttState" label="MQTT" announce-state></status-badge>' +
                         '<status-badge :state="teamsState" label="Teams" announce-state></status-badge>' +
                         '<status-badge v-if="stale" state="heartbeat_missing" label="Données anciennes"></status-badge>' +
                     '</div>' +
-                    '<dl class="source-details">' +
-                        '<div><dt>Snapshot</dt><dd :title="formatDateTime(generatedAt)">{{ formatRelative(generatedAt) }}</dd></div>' +
-                        '<div><dt>Évaluation</dt><dd :title="formatDateTime(lastEvaluationAt)">{{ formatRelative(lastEvaluationAt) }}</dd></div>' +
-                        '<div><dt>Dernier poll Balena</dt><dd :title="formatDateTime(sourceStatus.balena && sourceStatus.balena.lastSuccessAt)">{{ formatRelative(sourceStatus.balena && sourceStatus.balena.lastSuccessAt) }}</dd></div>' +
-                        '<div><dt>Dernier heartbeat</dt><dd :title="formatDateTime(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt)">{{ formatRelative(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt) }}</dd></div>' +
-                        '<div><dt>Prochain poll estimé</dt><dd :title="formatDateTime(nextPollAt)">{{ formatRelative(nextPollAt) }}</dd></div>' +
+                    '<dl class="source-details telemetry-grid">' +
+                        '<div class="telemetry-cell"><dt>Relevé</dt><dd :title="formatDateTime(generatedAt)">{{ formatRelative(generatedAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Évaluation</dt><dd :title="formatDateTime(lastEvaluationAt)">{{ formatRelative(lastEvaluationAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Dernier poll Balena</dt><dd :title="formatDateTime(sourceStatus.balena && sourceStatus.balena.lastSuccessAt)">{{ formatRelative(sourceStatus.balena && sourceStatus.balena.lastSuccessAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Dernier heartbeat</dt><dd :title="formatDateTime(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt)">{{ formatRelative(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Prochain poll estimé</dt><dd :title="formatDateTime(nextPollAt)">{{ formatRelative(nextPollAt) }}</dd></div>' +
                     '</dl>' +
                     '<p v-if="errorText(sourceStatus.balena)" class="source-error" role="status"><strong>Balena :</strong> {{ errorText(sourceStatus.balena) }}</p>' +
                     '<p v-if="errorText(sourceStatus.teams)" class="source-error" role="status"><strong>Teams :</strong> {{ errorText(sourceStatus.teams) }}</p>' +

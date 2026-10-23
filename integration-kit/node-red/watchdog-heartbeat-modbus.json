@@ -1,0 +1,121 @@
+[
+  {
+    "id": "e102000000000001",
+    "type": "tab",
+    "label": "Kit Watchdog Modbus",
+    "disabled": false,
+    "info": "Template générique watchdog.heartbeat.v1"
+  },
+  {
+    "id": "e102000000000002",
+    "type": "link in",
+    "z": "e102000000000001",
+    "name": "État technique Modbus",
+    "links": [],
+    "x": 140,
+    "y": 140,
+    "wires": [
+      [
+        "e102000000000003"
+      ]
+    ]
+  },
+  {
+    "id": "e102000000000003",
+    "type": "function",
+    "z": "e102000000000001",
+    "name": "Mémoriser état normalisé",
+    "func": "if (!msg.payload || typeof msg.payload !== 'object' || Array.isArray(msg.payload)) {\n    node.warn('État technique Modbus invalide');\n    return null;\n}\nflow.set('watchdogKitModbusState', msg.payload);\nreturn null;",
+    "outputs": 0,
+    "timeout": 0,
+    "noerr": 0,
+    "x": 350,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "e102000000000004",
+    "type": "inject",
+    "z": "e102000000000001",
+    "name": "Heartbeat toutes les 60 s",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "60",
+    "once": true,
+    "onceDelay": "30",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 160,
+    "y": 220,
+    "wires": [
+      [
+        "e102000000000005"
+      ]
+    ]
+  },
+  {
+    "id": "e102000000000005",
+    "type": "function",
+    "z": "e102000000000001",
+    "name": "Construire heartbeat Modbus",
+    "func": "const state = flow.get('watchdogKitModbusState') || {};\nconst uuid = env.get('BALENA_DEVICE_UUID');\nconst name = env.get('BALENA_DEVICE_NAME_AT_INIT') || env.get('BALENA_DEVICE_NAME') || env.get('HOSTNAME');\nif (!uuid || !name) {\n    node.status({ fill: 'red', shape: 'ring', text: 'identité Balena absente' });\n    return null;\n}\nconst modbus = state.health && state.health.modbus;\nconst healthOk = Boolean(state.health && state.health.ok && modbus && modbus.ok);\nmsg.topic = 'bacnet/gateway/' + uuid + '/heartbeat';\nmsg.qos = 1;\nmsg.retain = true;\nmsg.payload = {\n    schema: 'watchdog.heartbeat.v1',\n    ts: Date.now(),\n    device: { uuid, name, app: env.get('BALENA_APP_NAME') || '', host: env.get('HOSTNAME') || '', protocol: 'modbus' },\n    health: Object.assign({ ok: healthOk, protocol: 'modbus', modbus: modbus || { ok: false, lastError: 'état Modbus absent' } }, state.health || {}, { protocol: 'modbus' }),\n    mqtt: Object.assign({ ok: false, connected: false, status: 'unknown' }, state.mqtt || {}),\n    buffer: Object.assign({ state: 'unknown', pending: 0 }, state.buffer || {}),\n    snapshot: null,\n    supervisor: state.supervisor === undefined ? null : state.supervisor\n};\nnode.status({ fill: healthOk ? 'green' : 'red', shape: 'dot', text: healthOk ? 'ok' : 'dégradé' });\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "x": 440,
+    "y": 220,
+    "wires": [
+      [
+        "e102000000000006"
+      ]
+    ]
+  },
+  {
+    "id": "e102000000000006",
+    "type": "mqtt out",
+    "z": "e102000000000001",
+    "name": "Heartbeat vers Watchdog Hub",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "application/json",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "e102000000000007",
+    "x": 730,
+    "y": 220,
+    "wires": []
+  },
+  {
+    "id": "e102000000000007",
+    "type": "mqtt-broker",
+    "name": "Watchdog MQTT",
+    "broker": "${WATCHDOG_MQTT_HOST}",
+    "port": "${WATCHDOG_MQTT_PORT}",
+    "clientid": "",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "willMsg": {}
+  }
+]
