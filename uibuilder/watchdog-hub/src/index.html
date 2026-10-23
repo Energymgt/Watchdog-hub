@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr" data-theme="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,14 +7,15 @@
     <title>Watchdog Hub</title>
     <script>
         (function () {
-            var theme = 'light';
+            var theme = 'dark';
             try {
                 var saved = localStorage.getItem('watchdog-theme');
                 if (saved === 'dark' || saved === 'light') theme = saved;
             } catch (error) {
-                theme = 'light';
+                theme = 'dark';
             }
             document.documentElement.setAttribute('data-theme', theme);
+            document.documentElement.style.colorScheme = theme;
         }());
     </script>
     <link rel="stylesheet" href="./index.css">
