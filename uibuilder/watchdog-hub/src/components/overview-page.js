@@ -442,7 +442,8 @@
             flowsHealth: function () { return this.built.flows; },
             devicesHealth: function () { return this.built.devices; },
             reliability: function () { return this.built.reliability; },
-            attentionItems: function () { return this.built.attention; }
+            attentionItems: function () { return this.built.attention; },
+            reviewItems: function () { return this.built.review || []; }
         },
         methods: {
             openItem: function (item) {
@@ -461,63 +462,82 @@
             }
         },
         template:
-            '<section class="overview-page" aria-labelledby="overview-title">' +
-                '<div class="workspace-heading">' +
-                    '<h2 id="overview-title">Vue d’ensemble</h2>' +
-                    '<p>Santé des flux métier et des appareils, puis les problèmes qui demandent une intervention.</p>' +
+            '<section class="overview-page view-stack" aria-labelledby="overview-title">' +
+                '<div class="workspace-heading workspace-header">' +
+                    '<div class="workspace-header__titles"><p class="eyebrow">Poste de supervision</p><h2 id="overview-title">Vue d’ensemble</h2><p class="workspace-header__lead">Santé des flux métier et des appareils, puis les problèmes qui demandent une intervention.</p></div>' +
                 '</div>' +
-                '<p v-if="reliability" class="overview-reliability">{{ reliability }}</p>' +
+                '<p v-if="reliability" class="overview-reliability ui-banner ui-banner--warning">{{ reliability }}</p>' +
                 '<div class="health-grid" aria-label="État du système">' +
                     '<article class="health-block" :class="\'health-block--\' + flowsHealth.tone">' +
                         '<header class="health-block__head"><h3>Flux métier</h3><span class="status-badge" :class="\'status-badge--\' + flowsHealth.tone">{{ flowsHealth.label }}</span></header>' +
-                        '<p class="health-block__detail">{{ flowsHealth.detail }}</p>' +
-                        '<dl v-if="flowsHealth.counts" class="health-counts">' +
-                            '<div><dt>Opérationnels</dt><dd>{{ flowsHealth.counts.ok }}</dd></div>' +
-                            '<div><dt>Dégradés</dt><dd>{{ flowsHealth.counts.degraded }}</dd></div>' +
-                            '<div><dt>Indisponibles</dt><dd>{{ flowsHealth.counts.down }}</dd></div>' +
-                            '<div><dt>Inconnus</dt><dd>{{ flowsHealth.counts.unknown }}</dd></div>' +
+                        '<p class="health-block__detail health-block__summary">{{ flowsHealth.detail }}</p>' +
+                        '<dl v-if="flowsHealth.counts" class="health-counts health-counters">' +
+                            '<div class="health-counter-box"><dt>Opérationnels</dt><dd>{{ flowsHealth.counts.ok }}</dd></div>' +
+                            '<div class="health-counter-box"><dt>Dégradés</dt><dd>{{ flowsHealth.counts.degraded }}</dd></div>' +
+                            '<div class="health-counter-box"><dt>Indisponibles</dt><dd>{{ flowsHealth.counts.down }}</dd></div>' +
+                            '<div class="health-counter-box"><dt>Inconnus</dt><dd>{{ flowsHealth.counts.unknown }}</dd></div>' +
                         '</dl>' +
-                        '<button class="overview-link" type="button" @click="openView(\'flows\')">Ouvrir les flux</button>' +
+                        '<div class="health-block__foot"><span class="cell-sub">{{ flowSummary.incidentsActive || 0 }} incident(s) actif(s)</span><button class="overview-link btn btn--xs" type="button" @click="openView(\'flows\')">Ouvrir les flux →</button></div>' +
                     '</article>' +
                     '<article class="health-block" :class="\'health-block--\' + devicesHealth.tone">' +
                         '<header class="health-block__head"><h3>Appareils</h3><span class="status-badge" :class="\'status-badge--\' + devicesHealth.tone">{{ devicesHealth.label }}</span></header>' +
-                        '<p class="health-block__detail">{{ devicesHealth.detail }}</p>' +
-                        '<dl v-if="devicesHealth.counts" class="health-counts">' +
-                            '<div><dt>Opérationnels</dt><dd>{{ devicesHealth.counts.ok }}</dd></div>' +
-                            '<div><dt>À surveiller</dt><dd>{{ devicesHealth.counts.attention }}</dd></div>' +
-                            '<div><dt>Hors service</dt><dd>{{ devicesHealth.counts.dead }}</dd></div>' +
-                            '<div><dt>Inconnus</dt><dd>{{ devicesHealth.counts.unknown }}</dd></div>' +
+                        '<p class="health-block__detail health-block__summary">{{ devicesHealth.detail }}</p>' +
+                        '<dl v-if="devicesHealth.counts" class="health-counts health-counters">' +
+                            '<div class="health-counter-box"><dt>Opérationnels</dt><dd>{{ devicesHealth.counts.ok }}</dd></div>' +
+                            '<div class="health-counter-box"><dt>À surveiller</dt><dd>{{ devicesHealth.counts.attention }}</dd></div>' +
+                            '<div class="health-counter-box"><dt>Hors service</dt><dd>{{ devicesHealth.counts.dead }}</dd></div>' +
+                            '<div class="health-counter-box"><dt>Inconnus</dt><dd>{{ devicesHealth.counts.unknown }}</dd></div>' +
                         '</dl>' +
-                        '<button class="overview-link" type="button" @click="openView(\'fleet\')">Ouvrir les appareils</button>' +
+                        '<div class="health-block__foot"><span class="cell-sub">{{ fleetSummary.alerts || 0 }} appareil(s) en alerte</span><button class="overview-link btn btn--xs" type="button" @click="openView(\'fleet\')">Ouvrir les appareils →</button></div>' +
                     '</article>' +
                 '</div>' +
-                '<section class="overview-panel" aria-labelledby="priority-title">' +
-                    '<div class="section-heading"><h3 id="priority-title">À traiter</h3><span class="activity-count">{{ attentionItems.length }}</span></div>' +
-                    '<p v-if="initialLoading" class="empty-inline">Lecture des problèmes en cours.</p>' +
-                    '<p v-else-if="!attentionItems.length" class="empty-inline">Aucun incident actif, flux en défaut ou appareil en défaut.</p>' +
-                    '<ol v-else class="priority-list">' +
-                        '<li v-for="item in attentionItems" :key="item.key">' +
-                            '<div class="priority-list__item" :class="\'priority-list__item--\' + item.tone">' +
-                                '<button type="button" class="priority-list__main" @click="openItem(item)">' +
-                                    '<span class="priority-list__top"><span class="priority-list__id">{{ item.kind }}</span><span class="priority-list__meta">{{ item.stateLabel }} · <span :title="item.sinceTitle">{{ item.since }}</span></span></span>' +
-                                    '<strong class="priority-list__title">{{ item.name }}</strong>' +
-                                    '<small class="priority-list__context">{{ item.cause }}</small>' +
-                                    '<span v-if="item.sign" class="priority-list__context" :title="item.signTitle">{{ item.sign }}</span>' +
-                                '</button>' +
-                                '<span class="priority-list__actions">' +
-                                    '<button type="button" class="detail-button" :aria-label="item.actionLabel" @click="openItem(item)">{{ item.action }}</button>' +
-                                    '<button v-if="item.target === \'incident\' && item.flow" type="button" class="detail-button" :aria-label="\'Ouvrir le flux \' + item.flow.name" @click="openFlow(item.flow)">Voir le flux</button>' +
-                                '</span>' +
-                            '</div>' +
-                        '</li>' +
-                    '</ol>' +
-                    '<button class="overview-link" type="button" @click="openView(\'incidents\')">Ouvrir les incidents</button>' +
-                '</section>' +
-                '<section class="overview-panel" aria-labelledby="overview-activity-title">' +
-                    '<div class="section-heading"><h3 id="overview-activity-title">Activité récente</h3></div>' +
-                    '<p v-if="activityPartial" class="activity-partial">Certaines sources d’activité sont indisponibles.</p>' +
-                    '<activity-timeline :items="activity" :now="now" @open="openActivity"></activity-timeline>' +
-                '</section>' +
+                '<div class="overview-Workbench">' +
+                    '<div class="overview-column">' +
+                        '<section class="overview-panel panel-card" aria-labelledby="priority-title">' +
+                            '<div class="section-heading panel-card__head"><h3 id="priority-title">À traiter <span class="activity-count nav-counter" :class="attentionItems.length ? \'nav-counter--alert\' : \'nav-counter--volume\'">{{ attentionItems.length }}</span></h3><button class="overview-link btn btn--xs btn--ghost" type="button" @click="openView(\'incidents\')">Ouvrir les incidents →</button></div>' +
+                            '<p v-if="initialLoading" class="empty-inline">Lecture des problèmes en cours.</p>' +
+                            '<p v-else-if="!attentionItems.length" class="empty-inline">Aucun incident actif, flux en défaut ou appareil en défaut.</p>' +
+                            '<ol v-else class="priority-list">' +
+                                '<li v-for="item in attentionItems" :key="item.key">' +
+                                    '<div class="priority-list__item priority-item" :class="[\'priority-list__item--\' + item.tone, \'priority-item--\' + item.tone]">' +
+                                        '<button type="button" class="priority-list__main priority-item__main" @click="openItem(item)">' +
+                                            '<span class="priority-list__top priority-item__meta"><span class="status-badge" :class="\'status-badge--\' + item.tone">{{ item.stateLabel }}</span><span class="priority-list__id">{{ item.kind }}</span><span class="priority-list__meta">· <span :title="item.sinceTitle">{{ item.since }}</span></span></span>' +
+                                            '<strong class="priority-list__title priority-item__title">{{ item.name }}</strong>' +
+                                            '<small class="priority-list__context priority-item__cause">{{ item.cause }}</small>' +
+                                            '<span v-if="item.sign" class="priority-list__context priority-item__cause" :title="item.signTitle">{{ item.sign }}</span>' +
+                                        '</button>' +
+                                        '<span class="priority-list__actions priority-item__actions">' +
+                                            '<button v-if="item.target === \'incident\' && item.flow" type="button" class="detail-button btn btn--xs" :aria-label="\'Ouvrir le flux \' + item.flow.name" @click="openFlow(item.flow)">Voir le flux</button>' +
+                                            '<button type="button" class="detail-button btn btn--xs btn--primary" :aria-label="item.actionLabel" @click="openItem(item)">{{ item.action }}</button>' +
+                                        '</span>' +
+                                    '</div>' +
+                                '</li>' +
+                            '</ol>' +
+                        '</section>' +
+                        '<section v-if="reviewItems.length" class="overview-panel panel-card" aria-labelledby="review-title">' +
+                            '<div class="section-heading panel-card__head"><h3 id="review-title">En attente de premier signal (Inconnu) <span class="activity-count nav-counter nav-counter--volume">{{ reviewItems.length }}</span></h3></div>' +
+                            '<ol class="priority-list">' +
+                                '<li v-for="item in reviewItems" :key="item.key">' +
+                                    '<div class="priority-list__item priority-item priority-list__item--unknown priority-item--unknown">' +
+                                        '<button type="button" class="priority-list__main priority-item__main" @click="openItem(item)">' +
+                                            '<span class="priority-list__top priority-item__meta"><span class="status-badge status-badge--unknown">Inconnu</span><span class="priority-list__id">{{ item.kind }}</span></span>' +
+                                            '<strong class="priority-list__title priority-item__title">{{ item.name }}</strong>' +
+                                            '<small class="priority-list__context priority-item__cause">{{ item.cause }}</small>' +
+                                        '</button>' +
+                                        '<span class="priority-list__actions priority-item__actions">' +
+                                            '<button type="button" class="detail-button btn btn--xs" :aria-label="item.actionLabel" @click="openItem(item)">Inspecter</button>' +
+                                        '</span>' +
+                                    '</div>' +
+                                '</li>' +
+                            '</ol>' +
+                        '</section>' +
+                    '</div>' +
+                    '<section class="overview-panel panel-card" aria-labelledby="overview-activity-title">' +
+                        '<div class="section-heading panel-card__head"><h3 id="overview-activity-title">Activité récente</h3><span class="cell-sub">Inter-domaines</span></div>' +
+                        '<p v-if="activityPartial" class="activity-partial">Certaines sources d’activité sont indisponibles.</p>' +
+                        '<activity-timeline :items="activity" :now="now" @open="openActivity"></activity-timeline>' +
+                    '</section>' +
+                '</div>' +
             '</section>'
     };
 }(window));

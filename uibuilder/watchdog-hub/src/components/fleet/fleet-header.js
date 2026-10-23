@@ -18,7 +18,7 @@
             fleetName: { type: String, default: 'Watchdog Hub' }
         },
         data: function () {
-            return { lightTheme: true };
+            return { lightTheme: false };
         },
         mounted: function () {
             this.applyTheme(this.readTheme(), false);
@@ -52,7 +52,7 @@
                 }
                 if (saved === 'dark' || saved === 'light') return saved;
                 var current = document.documentElement.getAttribute('data-theme');
-                return current === 'dark' ? 'dark' : 'light';
+                return current === 'light' ? 'light' : 'dark';
             },
             applyTheme: function (theme, persist) {
                 var next = theme === 'dark' ? 'dark' : 'light';
@@ -74,31 +74,40 @@
         },
         template:
             '<header class="page-header">' +
-                '<div class="header-content">' +
+                '<div class="header-content header-bar">' +
                     '<div class="header-identity">' +
-                        '<div><p class="eyebrow">Supervision</p><h1>{{ fleetName }}</h1></div>' +
+                        '<span class="brand-mark" aria-hidden="true">WH</span>' +
+                        '<div class="header-titles"><p class="eyebrow header-eyebrow">Siège de supervision</p><h1>{{ fleetName }}</h1></div>' +
                     '</div>' +
-                    '<div class="header-meta header-meta--primary">' +
-                        '<span class="system-summary" :title="formatDateTime(generatedAt)">Dernier relevé {{ formatRelative(generatedAt) }}</span>' +
-                        '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'Connecté\' : \'Hors ligne\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
-                        '<button class="header-theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Thème clair actif. Activer le thème sombre.\' : \'Thème sombre actif. Activer le thème clair.\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair, passer au sombre\' : \'Thème sombre, passer au clair\' }}</button>' +
-                        '<button class="header-command" type="button" @click="$emit(\'open-command\')">Rechercher <kbd>Ctrl K</kbd></button>' +
+                    '<div class="header-telemetry-inline" aria-label="Télémétrie temps réel">' +
+                        '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'Canal temps réel connecté\' : \'Canal hors ligne\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
+                        '<status-badge v-if="stale" state="heartbeat_missing" label="Données anciennes"></status-badge>' +
+                        '<span class="telemetry-divider" aria-hidden="true"></span>' +
+                        '<status-badge :state="balenaState" label="Balena" announce-state></status-badge>' +
+                        '<status-badge :state="mqttState" label="MQTT" announce-state></status-badge>' +
+                        '<status-badge :state="teamsState" label="Teams" announce-state></status-badge>' +
+                        '<span class="telemetry-divider" aria-hidden="true"></span>' +
+                        '<span class="system-summary header-timestamp" :title="formatDateTime(generatedAt)">Dernier relevé {{ formatRelative(generatedAt) }}</span>' +
+                    '</div>' +
+                    '<div class="header-meta header-meta--primary header-actions">' +
+                        '<button class="header-command command-trigger" type="button" @click="$emit(\'open-command\')"><span>Rechercher ou aller à...</span> <kbd>Ctrl K</kbd></button>' +
+                        '<button class="header-theme-toggle theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Thème clair actif. Activer le thème sombre.\' : \'Thème sombre actif. Activer le thème clair.\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair, passer au sombre\' : \'Thème sombre, passer au clair\' }}</button>' +
                     '</div>' +
                 '</div>' +
-                '<details class="header-secondary">' +
-                    '<summary>Sources et télémétrie</summary>' +
+                '<details class="header-secondary header-telemetry-drawer">' +
+                    '<summary>Sources, fraîcheur et cadencement des relevés</summary>' +
                     '<div class="header-sources" aria-label="État des sources">' +
                         '<status-badge :state="balenaState" label="Balena" announce-state></status-badge>' +
                         '<status-badge :state="mqttState" label="MQTT" announce-state></status-badge>' +
                         '<status-badge :state="teamsState" label="Teams" announce-state></status-badge>' +
                         '<status-badge v-if="stale" state="heartbeat_missing" label="Données anciennes"></status-badge>' +
                     '</div>' +
-                    '<dl class="source-details">' +
-                        '<div><dt>Relevé</dt><dd :title="formatDateTime(generatedAt)">{{ formatRelative(generatedAt) }}</dd></div>' +
-                        '<div><dt>Évaluation</dt><dd :title="formatDateTime(lastEvaluationAt)">{{ formatRelative(lastEvaluationAt) }}</dd></div>' +
-                        '<div><dt>Dernier poll Balena</dt><dd :title="formatDateTime(sourceStatus.balena && sourceStatus.balena.lastSuccessAt)">{{ formatRelative(sourceStatus.balena && sourceStatus.balena.lastSuccessAt) }}</dd></div>' +
-                        '<div><dt>Dernier heartbeat</dt><dd :title="formatDateTime(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt)">{{ formatRelative(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt) }}</dd></div>' +
-                        '<div><dt>Prochain poll estimé</dt><dd :title="formatDateTime(nextPollAt)">{{ formatRelative(nextPollAt) }}</dd></div>' +
+                    '<dl class="source-details telemetry-grid">' +
+                        '<div class="telemetry-cell"><dt>Relevé</dt><dd :title="formatDateTime(generatedAt)">{{ formatRelative(generatedAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Évaluation</dt><dd :title="formatDateTime(lastEvaluationAt)">{{ formatRelative(lastEvaluationAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Dernier poll Balena</dt><dd :title="formatDateTime(sourceStatus.balena && sourceStatus.balena.lastSuccessAt)">{{ formatRelative(sourceStatus.balena && sourceStatus.balena.lastSuccessAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Dernier heartbeat</dt><dd :title="formatDateTime(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt)">{{ formatRelative(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt) }}</dd></div>' +
+                        '<div class="telemetry-cell"><dt>Prochain poll estimé</dt><dd :title="formatDateTime(nextPollAt)">{{ formatRelative(nextPollAt) }}</dd></div>' +
                     '</dl>' +
                     '<p v-if="errorText(sourceStatus.balena)" class="source-error" role="status"><strong>Balena :</strong> {{ errorText(sourceStatus.balena) }}</p>' +
                     '<p v-if="errorText(sourceStatus.teams)" class="source-error" role="status"><strong>Teams :</strong> {{ errorText(sourceStatus.teams) }}</p>' +

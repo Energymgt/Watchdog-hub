@@ -9,6 +9,10 @@
         (function () {
             var theme = 'dark';
             try {
+                if (!localStorage.getItem('watchdog-theme-v2')) {
+                    localStorage.setItem('watchdog-theme', 'dark');
+                    localStorage.setItem('watchdog-theme-v2', '1');
+                }
                 var saved = localStorage.getItem('watchdog-theme');
                 if (saved === 'dark' || saved === 'light') theme = saved;
             } catch (error) {
