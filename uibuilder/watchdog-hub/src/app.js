@@ -606,7 +606,7 @@
                         '<ui-banner v-if="flowsState.lastError" kind="error">{{ flowsState.lastError }}</ui-banner>' +
                         '<ui-banner v-if="anomaliesState.lastError" kind="error">{{ anomaliesState.lastError }}</ui-banner>' +
                         '<ui-banner v-if="eventsState.lastError" kind="error">{{ eventsState.lastError }}</ui-banner>' +
-                        '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :fleet-known="Boolean(state.snapshot)" :flows="flowsState.flows" :devices="state.devices" :generated-at="state.snapshot && state.snapshot.generatedAt" :activity="activity" :activity-partial="activityPartial" :recent-transitions="state.recentTransitions" :loading="flowsState.loading || flowsState.refreshing" :connected="state.connected === true" :stale="stale" :now="now" @open-device="openDetail" @open-view="openView"' +
+                        '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :fleet-known="Boolean(state.snapshot)" :fleet-error="state.lastError" :flows-error="flowsState.lastError" :flows="flowsState.flows" :devices="state.devices" :generated-at="state.snapshot && state.snapshot.generatedAt" :activity="activity" :activity-partial="activityPartial" :recent-transitions="state.recentTransitions" :loading="flowsState.loading || flowsState.refreshing" :connected="state.connected === true" :stale="stale" :now="now" @open-device="openDetail" @open-view="openView"' +
                         ' :incidents="flowsState.incidents" @open-incident="openIncident"></overview-page>' +
                     '</template>' +
                     '<template v-else-if="state.view === \'flows\' || state.view === \'incidents\'">' +

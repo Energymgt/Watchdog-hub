@@ -127,3 +127,18 @@ Contrôles en lecture seule, sans redémarrage, sans jeton d’ingest et sans `F
 | Le registre n’a pas changé | `GET /healthz` : tous les compteurs restent à 0 |
 
 Le déploiement du correctif local reste bloqué. `publish.ps1` refuse un arbre Git modifié, et aucune session Portainer n’est disponible depuis ce poste. `FORCE_COPY_FLOWS` n’a pas été activé. Le verdict global reste **NO GO**.
+
+## 12. Après redéploiement, 23 octobre 07:19
+
+Image servie horodatée `Fri, 23 Oct 2026 05:17:10 GMT`. Le store contient la vue `events`. L’en-tête contient le libellé des flux non confirmés. `GET /healthz` reste à zéro sur tous les compteurs.
+
+Contrôle navigateur, lecture seule :
+
+| Contrôle | Résultat |
+| --- | --- |
+| `#events` | Navigation courante « Événements », titre « Events Workspace », registre vide « Aucun événement disponible. » |
+| En-tête après lecture des flux | `DEGRADED`, `0 incidents`, `3 flux non confirmés`, `4 alertes flotte` |
+| Flux | 3 flux `UNKNOWN`, « Aucun événement reçu », « État non déterminable » |
+| Overview | `SITUATION DÉGRADÉE`, KPI 0 incident, 0 flux dégradé, 4 alertes, 7 appareils |
+
+Les défauts de navigation Événements et de libellé « 0 flux » sont levés sur le siège. La dégradation affichée vient des 4 alertes flotte et des 3 flux sans événement. Aucune écriture n’a été faite.

@@ -144,7 +144,7 @@
                 '<div class="admin-hero">' +
                     '<div>' +
                         '<p class="eyebrow">Console</p>' +
-                        '<h2 id="admin-title">Administration</h2>' +
+                        '<h2 id="admin-title">Paramètres</h2>' +
                         '<p class="admin-lead">Connectez les sources, enrôlez une gateway, ajustez les seuils déjà documentés. Les secrets ne sont jamais renvoyés en clair.</p>' +
                     '</div>' +
                     '<ui-button @click="$emit(\'open-enroll\', $event)">Connecter un appareil</ui-button>' +

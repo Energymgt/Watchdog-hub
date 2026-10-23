@@ -2129,6 +2129,7 @@ body {
 
 .overview-situation--ok strong { color: var(--ok); }
 .overview-situation--warning strong { color: var(--warning); }
+.overview-situation--high strong { color: var(--high); }
 .overview-situation--critical strong { color: var(--critical); }
 
 .overview-kpis {
@@ -2258,6 +2259,24 @@ body {
     justify-items: stretch;
 }
 
+.priority-list__main {
+    display: grid;
+    gap: 0.12rem;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+}
+
+.priority-list__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    margin-top: 0.35rem;
+}
+
 .priority-list__top {
     display: flex;
     align-items: baseline;
@@ -2282,10 +2301,8 @@ body {
 }
 
 .priority-list__title {
-    overflow: hidden;
+    overflow-wrap: anywhere;
     font-size: 0.88rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .priority-list__context,
@@ -3075,6 +3092,15 @@ button.activity-timeline__item:focus-visible strong {
     color: var(--text);
 }
 
+.overview-situation--high strong { color: var(--high); }
+
+.overview-reliability {
+    max-width: 44rem;
+    margin: 0.45rem 0 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
 .priority-list__action {
     justify-content: flex-start;
     color: var(--primary);
@@ -3149,6 +3175,7 @@ button.activity-timeline__item:focus-visible strong {
     border-bottom: 1px solid var(--border);
     text-align: left;
     vertical-align: top;
+    overflow-wrap: anywhere;
 }
 
 .watch-table th {

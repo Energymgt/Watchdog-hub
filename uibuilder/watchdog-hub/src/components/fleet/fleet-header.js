@@ -60,15 +60,21 @@
                     })
                     : (this.fleetSummary.alerts || 0) > 0;
                 var unknownDevices = devices.some(function (device) { return device.state === 'unknown'; });
-                if (!this.connected) return { label: 'Hors ligne', state: 'dead' };
-                if ((this.flowsKnown && (this.flowSummary.down || 0) > 0) || dead) {
-                    return { label: 'Incident critique', state: 'dead' };
+                var unavailable = (this.flowsKnown && (this.flowSummary.down || 0) > 0) || dead;
+                var attention = (this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || actionable;
+                var unverified = (this.flowSummary.unknown || 0) > 0 || unknownDevices;
+                if (!this.connected) {
+                    if (!this.generatedAt && !this.flowsKnown) return { label: 'État inconnu', state: 'unknown' };
+                    if (unavailable) return { label: 'Dernier relevé : des éléments sont indisponibles', state: 'dead' };
+                    if (attention) return { label: 'Dernier relevé : des éléments nécessitent votre attention', state: 'cloud_down' };
+                    if (unverified || this.stale) return { label: 'Dernier relevé : des éléments sont à vérifier', state: 'unknown' };
+                    return { label: 'Dernier relevé : aucun défaut signalé', state: 'unknown' };
                 }
+                if (unavailable) return { label: 'Des éléments sont indisponibles', state: 'dead' };
                 if (!this.generatedAt || !this.flowsKnown) return { label: 'État inconnu', state: 'unknown' };
-                if ((this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || actionable) {
-                    return { label: 'Attention requise', state: 'cloud_down' };
-                }
-                if ((this.flowSummary.unknown || 0) > 0 || unknownDevices) return { label: 'État inconnu', state: 'unknown' };
+                if (attention) return { label: 'Des éléments nécessitent votre attention', state: 'cloud_down' };
+                if (unverified) return { label: 'Des éléments sont à vérifier', state: 'unknown' };
+                if (this.stale) return { label: 'État non confirmé', state: 'heartbeat_missing' };
                 return { label: 'Tout fonctionne', state: 'ok' };
             },
             affectedFlows: function () {
@@ -114,10 +120,11 @@
                         '<status-badge :state="systemState.state" :label="systemState.label"></status-badge>' +
                     '</div>' +
                     '<div class="header-meta header-meta--primary">' +
+                        '<span v-if="connected === false && (generatedAt || flowsKnown)" class="system-summary">Les compteurs qui suivent décrivent le dernier relevé reçu.</span>' +
                         '<span class="system-summary">{{ incidentsLabel }}</span>' +
                         '<span class="system-summary">{{ flowsLabel }}</span>' +
                         '<span class="system-summary">{{ alertsLabel }}</span>' +
-                        '<span class="system-summary" :title="formatDateTime(generatedAt)">Actualisé {{ formatRelative(generatedAt) }}</span>' +
+                        '<span class="system-summary" :title="formatDateTime(generatedAt)">{{ connected ? \'Actualisé\' : \'Reçu\' }} {{ formatRelative(generatedAt) }}</span>' +
                         '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'Connecté\' : \'Hors ligne\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
                         '<button class="header-theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Activer le thème sombre\' : \'Activer le thème clair\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair\' : \'Thème sombre\' }}</button>' +
                         '<button class="header-command" type="button" @click="$emit(\'open-command\')">Rechercher <kbd>Ctrl K</kbd></button>' +
