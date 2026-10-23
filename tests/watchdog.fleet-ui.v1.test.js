@@ -19,7 +19,7 @@ describe('Fleet Command Center', () => {
         const list = read('components/fleet/device-list.js');
         const filters = read('components/ui/filter-bar.js');
 
-        assert.match(app, /Fleet Command Center/);
+        assert.match(app, /Appareils surveillés/);
         assert.match(app, /fleet_snapshot_get|requestSnapshot/);
         assert.match(app, /fleet-activity/);
         assert.match(app, /recentTransitions/);

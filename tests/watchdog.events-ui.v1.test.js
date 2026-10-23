@@ -67,7 +67,7 @@ describe('workspace UI Events', () => {
         assert.match(store, /selectedEvent/);
         assert.match(store, /timestamp/);
         assert.match(store, /resetFilters/);
-        assert.match(page, /Events Workspace/);
+        assert.match(page, /<h2>Événements<\/h2>/);
         assert.match(page, /Chargement des événements/);
         assert.match(page, /Aucun événement disponible/);
         assert.match(page, /events-search/);
@@ -75,7 +75,7 @@ describe('workspace UI Events', () => {
         assert.match(page, /formatPayload/);
         assert.match(page, /select-flow/);
         assert.match(page, /event-detail--empty/);
-        assert.match(page, /Fermer le détail Event/);
+        assert.match(page, /Fermer le détail de l’événement/);
         assert.match(page, /payload/);
         assert.match(app, /createEventsStore/);
         assert.match(app, /createEventsUibuilderClient/);

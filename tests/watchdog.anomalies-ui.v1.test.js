@@ -30,7 +30,7 @@ describe('workspace UI Anomalies', () => {
         assert.match(client, /anomalies_detail/);
         assert.match(client, /anomalies_error/);
         assert.match(store, /selectedAnomaly/);
-        assert.match(page, /Anomalies Workspace/);
+        assert.match(page, /<h2>Anomalies<\/h2>/);
         assert.match(page, /error_signature/);
         assert.match(page, /occurrence_count/);
         assert.match(page, /select-flow/);

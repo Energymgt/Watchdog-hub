@@ -3024,3 +3024,184 @@ button.activity-timeline__item:focus-visible strong {
 :root[data-theme="light"] .app-nav {
     background: #ffffff;
 }
+
+.app-nav__journal {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0.15rem 0 0;
+}
+
+.app-nav__journal summary {
+    padding: 0.45rem 0.55rem 0.2rem;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
+
+.app-nav__journal .app-nav__item {
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.overview-hero__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    align-items: center;
+}
+
+.overview-situation strong {
+    font-size: 1.35rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    line-height: 1.25;
+}
+
+.overview-situation span {
+    display: block;
+    max-width: 44rem;
+    margin-top: 0.2rem;
+    color: var(--muted);
+    font-size: 0.92rem;
+    font-weight: 450;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.overview-situation--ok strong,
+.overview-situation--unknown strong {
+    color: var(--text);
+}
+
+.priority-list__action {
+    justify-content: flex-start;
+    color: var(--primary);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.watch-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.7rem;
+}
+
+.watch-scopes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.watch-scopes button,
+.watch-search input {
+    min-height: 2rem;
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    background: var(--surface);
+    color: var(--text);
+}
+
+.watch-scopes button {
+    padding: 0.2rem 0.65rem;
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.watch-scopes button[aria-pressed="true"] {
+    border-color: var(--primary);
+    background: var(--surface-muted);
+    box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.watch-search {
+    display: grid;
+    gap: 0.2rem;
+    min-width: min(100%, 16rem);
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.watch-search input {
+    padding: 0.25rem 0.55rem;
+    font-weight: 450;
+}
+
+.watch-wrap {
+    margin-top: 0.35rem;
+    overflow-x: auto;
+}
+
+.watch-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.watch-table th,
+.watch-table td {
+    padding: 0.55rem 0.45rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.watch-table th {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.watch-label {
+    display: none;
+}
+
+.watch-table td:last-child,
+.watch-table th:last-child {
+    text-align: right;
+}
+
+@media (max-width: 700px) {
+    .overview-hero__links {
+        width: 100%;
+    }
+
+    .watch-table thead {
+        display: none;
+    }
+
+    .watch-table,
+    .watch-table tbody,
+    .watch-table tr,
+    .watch-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .watch-table tr {
+        padding: 0.7rem 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .watch-table td {
+        padding: 0.12rem 0;
+        border: 0;
+        text-align: left;
+    }
+
+    .watch-label {
+        display: block;
+        color: var(--muted);
+        font-size: 0.68rem;
+        font-weight: 700;
+    }
+
+    .app-nav__journal {
+        width: 100%;
+    }
+}

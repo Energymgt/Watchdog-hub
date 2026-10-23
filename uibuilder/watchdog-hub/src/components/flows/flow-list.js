@@ -15,7 +15,7 @@
             meta: formatters.flowStatusMeta,
             reason: formatters.reasonLabel,
             statusLabel: function (flow) {
-                return flow.status === 'unknown' ? 'UNKNOWN' : this.meta(flow.status).label;
+                return this.meta(flow.status).label;
             },
             showIncidents: function (flow) {
                 this.$emit('show-incidents', flow);

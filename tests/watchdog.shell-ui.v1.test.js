@@ -88,18 +88,20 @@ describe('contrat du shell UI Watchdog Hub', () => {
         const app = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
         const css = fs.readFileSync(path.join(UI_ROOT, 'index.css'), 'utf8');
 
-        assert.match(nav, /Overview/);
-        assert.match(nav, /Opérations/);
-        assert.match(nav, /Infrastructure/);
-        assert.match(nav, /Administration/);
+        assert.match(nav, /Vue d’ensemble/);
+        assert.match(nav, /Flux/);
+        assert.match(nav, /Appareils/);
+        assert.match(nav, /Incidents/);
+        assert.match(nav, /Paramètres/);
+        assert.match(nav, /Journal/);
         assert.match(nav, /anomalies.*update:view|update:view.*anomalies/);
         assert.match(nav, /update:view.*events|events.*update:view/);
         assert.doesNotMatch(nav, /open-command/);
 
         assert.match(header, /header-secondary/);
-        assert.match(header, /DEGRADED/);
-        assert.match(header, /UNKNOWN/);
-        assert.match(header, /LIVE/);
+        assert.match(header, /Attention requise/);
+        assert.match(header, /État inconnu/);
+        assert.match(header, /Tout fonctionne/);
         assert.match(header, /WebSocket connected/);
         assert.match(header, /open-command/);
         assert.match(app, /@open-command="openCommandPalette"/);
@@ -109,19 +111,19 @@ describe('contrat du shell UI Watchdog Hub', () => {
         assert.doesNotMatch(header, /[\u2013\u2014]/);
     });
 
-    it('place Overview comme console opérationnelle, pas comme table', () => {
+    it('place la vue d’ensemble comme lecture d’état, pas comme console marketing', () => {
         const overview = fs.readFileSync(path.join(UI_ROOT, 'components/overview-page.js'), 'utf8');
-        assert.match(overview, /Operational Overview/);
-        assert.match(overview, /À traiter maintenant/);
-        assert.match(overview, /Santé des flux/);
+        assert.match(overview, /Vue d’ensemble/);
+        assert.match(overview, /À traiter/);
+        assert.match(overview, /Éléments surveillés/);
         assert.match(overview, /Activité récente/);
         assert.match(overview, /recentTransitions/);
         assert.match(overview, /openView/);
         assert.match(overview, /activity-timeline/);
         assert.match(overview, /activity/);
-        assert.match(overview, /HEALTHY/);
-        assert.match(overview, /DEGRADED/);
-        assert.match(overview, /UNKNOWN/);
+        assert.match(overview, /Tout fonctionne/);
+        assert.match(overview, /Dégradé/);
+        assert.match(overview, /Inconnu/);
         assert.match(overview, /incident_id/);
         assert.match(overview, /error_signature/);
         assert.doesNotMatch(overview, /CRITICAL ·/);
@@ -189,7 +191,7 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: {}
         });
         assert.equal(partial.tone, 'unknown');
-        assert.notEqual(partial.label, 'SITUATION NOMINALE');
+        assert.notEqual(partial.label, 'Tout fonctionne');
 
         const nominal = overview.computed.situation.call({
             loading: false,
@@ -199,7 +201,41 @@ describe('contrat du shell UI Watchdog Hub', () => {
             flowSummary: flowsOk,
             fleetSummary: { alerts: 0, total: 1 }
         });
-        assert.equal(nominal.label, 'SITUATION NOMINALE');
+        assert.equal(nominal.label, 'Tout fonctionne');
+
+        const disconnected = overview.computed.situation.call({
+            loading: false,
+            connected: false,
+            stale: false,
+            fleetKnown: true,
+            flowSummary: flowsOk,
+            fleetSummary: { alerts: 0, total: 1 },
+            devices: [{ state: 'ok' }]
+        });
+        assert.notEqual(disconnected.label, 'Tout fonctionne');
+
+        const stale = overview.computed.situation.call({
+            loading: false,
+            connected: true,
+            stale: true,
+            fleetKnown: true,
+            flowSummary: flowsOk,
+            fleetSummary: { alerts: 0, total: 1 },
+            devices: [{ state: 'ok' }]
+        });
+        assert.equal(stale.label, 'Données périmées');
+
+        const unknownOverview = overview.computed.situation.call({
+            loading: false,
+            connected: true,
+            stale: false,
+            fleetKnown: true,
+            flowSummary: { total: 1, ok: 0, degraded: 0, down: 0, unknown: 1, incidentsActive: 0 },
+            fleetSummary: { alerts: 0, total: 1 },
+            devices: [{ state: 'ok' }]
+        });
+        assert.equal(unknownOverview.tone, 'unknown');
+        assert.notEqual(unknownOverview.label, 'Tout fonctionne');
 
         const unknownFlows = header.computed.systemState.call({
             connected: true,
@@ -208,7 +244,7 @@ describe('contrat du shell UI Watchdog Hub', () => {
             flowSummary: { total: 1, down: 0, degraded: 0, unknown: 1, incidentsActive: 0 },
             fleetSummary: { alerts: 0 }
         });
-        assert.equal(unknownFlows.label, 'UNKNOWN');
+        assert.equal(unknownFlows.label, 'État inconnu');
 
         const unknownLabel = header.computed.flowsLabel.call({
             flowsKnown: true,
@@ -224,7 +260,7 @@ describe('contrat du shell UI Watchdog Hub', () => {
             flowSummary: flowsOk,
             fleetSummary: { alerts: 0 }
         });
-        assert.equal(healthy.label, 'HEALTHY');
+        assert.equal(healthy.label, 'Tout fonctionne');
 
         const missingSource = header.computed.balenaState.call({ sourceStatus: {} });
         assert.equal(missingSource, 'unknown');

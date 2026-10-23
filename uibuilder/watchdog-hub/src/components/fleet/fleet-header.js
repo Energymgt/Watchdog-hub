@@ -17,7 +17,8 @@
             now: { type: Number, default: Date.now },
             fleetName: { type: String, default: 'Watchdog Hub' },
             flowSummary: { type: Object, default: function () { return {}; } },
-            fleetSummary: { type: Object, default: function () { return {}; } }
+            fleetSummary: { type: Object, default: function () { return {}; } },
+            devices: { type: Array, default: function () { return []; } }
         },
         data: function () {
             return { lightTheme: false };
@@ -50,14 +51,25 @@
                 return Object.prototype.hasOwnProperty.call(this.flowSummary, 'total');
             },
             systemState: function () {
-                if (!this.connected) return { label: 'DISCONNECTED', state: 'dead' };
-                if (!this.generatedAt || !this.flowsKnown) return { label: 'UNKNOWN', state: 'unknown' };
-                if ((this.flowSummary.down || 0) > 0) return { label: 'CRITICAL', state: 'dead' };
-                if ((this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || (this.fleetSummary.alerts || 0) > 0) {
-                    return { label: 'DEGRADED', state: 'cloud_down' };
+                var devices = this.devices || [];
+                var hasRows = devices.length > 0;
+                var dead = devices.some(function (device) { return device.state === 'dead'; });
+                var actionable = hasRows
+                    ? devices.some(function (device) {
+                        return device.state && device.state !== 'ok' && device.state !== 'unknown';
+                    })
+                    : (this.fleetSummary.alerts || 0) > 0;
+                var unknownDevices = devices.some(function (device) { return device.state === 'unknown'; });
+                if (!this.connected) return { label: 'Hors ligne', state: 'dead' };
+                if ((this.flowsKnown && (this.flowSummary.down || 0) > 0) || dead) {
+                    return { label: 'Incident critique', state: 'dead' };
                 }
-                if ((this.flowSummary.unknown || 0) > 0) return { label: 'UNKNOWN', state: 'unknown' };
-                return { label: 'HEALTHY', state: 'ok' };
+                if (!this.generatedAt || !this.flowsKnown) return { label: 'État inconnu', state: 'unknown' };
+                if ((this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || actionable) {
+                    return { label: 'Attention requise', state: 'cloud_down' };
+                }
+                if ((this.flowSummary.unknown || 0) > 0 || unknownDevices) return { label: 'État inconnu', state: 'unknown' };
+                return { label: 'Tout fonctionne', state: 'ok' };
             },
             affectedFlows: function () {
                 return (this.flowSummary.degraded || 0) + (this.flowSummary.down || 0);
@@ -98,17 +110,17 @@
             '<header class="page-header">' +
                 '<div class="header-content">' +
                     '<div class="header-identity">' +
-                        '<div><p class="eyebrow">Fleet Command Center</p><h1>{{ fleetName }}</h1></div>' +
+                        '<div><p class="eyebrow">Supervision</p><h1>{{ fleetName }}</h1></div>' +
                         '<status-badge :state="systemState.state" :label="systemState.label"></status-badge>' +
                     '</div>' +
                     '<div class="header-meta header-meta--primary">' +
                         '<span class="system-summary">{{ incidentsLabel }}</span>' +
                         '<span class="system-summary">{{ flowsLabel }}</span>' +
                         '<span class="system-summary">{{ alertsLabel }}</span>' +
-                        '<span class="system-summary" :title="formatDateTime(generatedAt)">Snapshot {{ formatRelative(generatedAt) }}</span>' +
-                        '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'LIVE\' : \'OFFLINE\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
+                        '<span class="system-summary" :title="formatDateTime(generatedAt)">Actualisé {{ formatRelative(generatedAt) }}</span>' +
+                        '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'Connecté\' : \'Hors ligne\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
                         '<button class="header-theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Activer le thème sombre\' : \'Activer le thème clair\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair\' : \'Thème sombre\' }}</button>' +
-                        '<button class="header-command" type="button" @click="$emit(\'open-command\')">Commandes <kbd>Ctrl K</kbd></button>' +
+                        '<button class="header-command" type="button" @click="$emit(\'open-command\')">Rechercher <kbd>Ctrl K</kbd></button>' +
                     '</div>' +
                 '</div>' +
                 '<details class="header-secondary">' +
@@ -120,7 +132,7 @@
                         '<status-badge v-if="stale" state="heartbeat_missing" label="Données anciennes"></status-badge>' +
                     '</div>' +
                     '<dl class="source-details">' +
-                        '<div><dt>Snapshot</dt><dd :title="formatDateTime(generatedAt)">{{ formatRelative(generatedAt) }}</dd></div>' +
+                        '<div><dt>Relevé</dt><dd :title="formatDateTime(generatedAt)">{{ formatRelative(generatedAt) }}</dd></div>' +
                         '<div><dt>Évaluation</dt><dd :title="formatDateTime(lastEvaluationAt)">{{ formatRelative(lastEvaluationAt) }}</dd></div>' +
                         '<div><dt>Dernier poll Balena</dt><dd :title="formatDateTime(sourceStatus.balena && sourceStatus.balena.lastSuccessAt)">{{ formatRelative(sourceStatus.balena && sourceStatus.balena.lastSuccessAt) }}</dd></div>' +
                         '<div><dt>Dernier heartbeat</dt><dd :title="formatDateTime(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt)">{{ formatRelative(sourceStatus.mqtt && sourceStatus.mqtt.lastMessageAt) }}</dd></div>' +
