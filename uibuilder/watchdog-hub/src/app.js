@@ -222,7 +222,8 @@
             }
 
             function showFlowIncidents(flow) {
-                flowsStore.state.query = flow.flow_id;
+                flowsStore.state.incidentQuery = flow.flow_id;
+                flowsStore.state.incidentStateFilter = 'active';
                 setView('incidents');
             }
 
@@ -367,7 +368,7 @@
                 setView(command);
                 if (command === 'incidents' || command === 'flows') {
                     Vue.nextTick(function () {
-                        var search = global.document.getElementById('flows-search');
+                        var search = global.document.getElementById(command === 'incidents' ? 'incidents-search' : 'flows-search');
                         if (search) search.focus();
                     });
                 }

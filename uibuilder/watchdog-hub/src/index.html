@@ -3,8 +3,20 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="light dark">
     <title>Watchdog Hub</title>
+    <script>
+        (function () {
+            var theme = 'light';
+            try {
+                var saved = localStorage.getItem('watchdog-theme');
+                if (saved === 'dark' || saved === 'light') theme = saved;
+            } catch (error) {
+                theme = 'light';
+            }
+            document.documentElement.setAttribute('data-theme', theme);
+        }());
+    </script>
     <link rel="stylesheet" href="./index.css">
 </head>
 <body>

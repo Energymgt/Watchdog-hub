@@ -13,11 +13,6 @@
             events: { type: Number, default: 0 },
             fleetAlerts: { type: Number, default: 0 }
         },
-        computed: {
-            problemsActive: function () {
-                return this.view === 'incidents' || this.view === 'anomalies' || this.view === 'events';
-            }
-        },
         template:
             '<nav class="app-nav" aria-label="Navigation principale">' +
                 '<p class="app-nav__brand">Watchdog</p>' +
@@ -27,8 +22,8 @@
                     '<button class="app-nav__item" type="button" :aria-current="view === \'fleet\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'fleet\')">Appareils <span v-if="fleetAlerts" class="app-nav__count">{{ fleetAlerts }}</span></button>' +
                 '</div>' +
                 '<div class="app-nav__group">' +
-                    '<button class="app-nav__item" type="button" :class="{ \'app-nav__item--active\': problemsActive }" @click="$emit(\'update:view\', \'incidents\')">Problèmes</button>' +
-                    '<div class="app-nav__sub" role="group" aria-label="Problèmes">' +
+                    '<p class="app-nav__label" id="app-nav-problems">Problèmes</p>' +
+                    '<div class="app-nav__sub" role="group" aria-labelledby="app-nav-problems">' +
                         '<button class="app-nav__item" type="button" :aria-current="view === \'incidents\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'incidents\')">Incidents <span v-if="incidents" class="app-nav__count">{{ incidents }}</span></button>' +
                         '<button class="app-nav__item" type="button" :aria-current="view === \'anomalies\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'anomalies\')">Anomalies <span v-if="anomalies" class="app-nav__count">{{ anomalies }}</span></button>' +
                         '<button class="app-nav__item" type="button" :aria-current="view === \'events\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'events\')">Événements <span v-if="events" class="app-nav__count">{{ events }}</span></button>' +

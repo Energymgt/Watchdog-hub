@@ -28,7 +28,7 @@
         },
         template:
             '<section aria-label="Liste des appareils" :aria-busy="refreshing ? \'true\' : \'false\'">' +
-                '<div class="table-wrap">' +
+                '<div class="table-wrap table-wrap--devices">' +
                     '<table>' +
                         '<caption class="sr-only">Identité, état et ancienneté du heartbeat</caption>' +
                         '<thead><tr>' +
@@ -51,7 +51,7 @@
                     '<article v-for="device in devices" :key="device.uuid" class="device-card">' +
                         '<div class="device-card__top"><div><div class="device-name">{{ device.name }}</div><span class="device-id" :title="device.uuid">{{ device.uuid }}</span></div><status-badge :state="device.state"></status-badge></div>' +
                         '<dl class="device-card__facts">' +
-                            '<div><dt>Heartbeat</dt><dd :title="formatDateTime(device.lastHeartbeat)">{{ formatRelative(device.lastHeartbeat) }}</dd></div>' +
+                            '<div><dt>Heartbeat</dt><dd :title="formatDateTime(device.lastHeartbeat)">{{ formatRelative(device.lastHeartbeat) }}<small class="cell-note">{{ device.heartbeat && device.heartbeat.retained ? \'Retenu\' : (device.hbOk ? \'Actif\' : \'Absent\') }}</small></dd></div>' +
                         '</dl>' +
                         '<p v-if="device.enrolled" class="pending-inline">Pré-enregistré — en attente du heartbeat</p>' +
                         '<p v-if="device.pendingConfirmation" class="pending-inline">Confirmation {{ device.pendingConfirmation.count }}/{{ device.pendingConfirmation.required }}</p>' +

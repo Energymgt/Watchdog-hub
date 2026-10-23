@@ -30,13 +30,6 @@
         methods: {
             meta: formatters.incidentStateMeta,
             formatDateTime: common.formatDateTime,
-            badgeState: function (tone) {
-                if (tone === 'critical') return 'dead';
-                if (tone === 'high') return 'heartbeat_missing';
-                if (tone === 'warning') return 'cloud_down';
-                if (tone === 'ok') return 'ok';
-                return 'unknown';
-            },
             open: function (incident, event) {
                 this.$emit('select', incident, event.currentTarget);
             }
@@ -51,7 +44,7 @@
                             '<button type="button" class="incident-row" :aria-label="\'Ouvrir l’incident \' + incident.incident_id" @click="open(incident, $event)">' +
                                 '<span class="incident-row__identity"><strong>{{ incident.incident_id }}</strong><small>{{ incident.flow_id }}</small></span>' +
                                 '<span class="incident-row__signature">{{ incident.error_signature || \'Signature non disponible\' }}</span>' +
-                                '<span class="incident-row__meta"><status-badge :state="badgeState(meta(incident.state).tone)" :label="meta(incident.state).label"></status-badge><small>{{ formatDateTime(incident.opened_at) }}</small></span>' +
+                                '<span class="incident-row__meta"><span class="status-badge" :class="\'status-badge--\' + meta(incident.state).tone">{{ meta(incident.state).label }}</span><small>{{ formatDateTime(incident.opened_at) }}</small></span>' +
                             '</button>' +
                         '</li></ol>' +
                     '</section>' +

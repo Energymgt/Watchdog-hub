@@ -14,7 +14,7 @@
         EN_CORRECTION: { label: 'En correction', tone: 'critical', rank: 4 },
         EN_VALIDATION: { label: 'En validation', tone: 'warning', rank: 5 },
         RESOLU: { label: 'Résolu', tone: 'ok', rank: 0 },
-        CLOS: { label: 'Clos', tone: 'unknown', rank: 0 }
+        CLOS: { label: 'Clos', tone: 'closed', rank: 0 }
     };
     var REASON_LABELS = {
         no_contract: 'Contrat de santé absent',
