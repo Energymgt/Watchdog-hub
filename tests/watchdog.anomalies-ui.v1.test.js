@@ -56,7 +56,13 @@ describe('workspace UI Anomalies', () => {
         assert.match(page, /flowFilter/);
         assert.match(page, /clauseFilter/);
         assert.match(page, /anomaly-detail--empty/);
+        assert.match(page, /state\.lastError/);
         assert.match(page, /Fermer le diagnostic/);
+        const app = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
+        const exposed = app.slice(app.lastIndexOf('return {'), app.indexOf('template:'));
+        assert.match(exposed, /selectAnomaly:/);
+        assert.match(exposed, /loadAnomalies:/);
+        assert.match(exposed, /selectAnomalyFlow:/);
         assert.match(page, /last_event_id/);
     });
 

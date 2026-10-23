@@ -595,5 +595,8 @@ describe('contrat du shell UI Watchdog Hub', () => {
         assert.match(adminSource, /Tester l’intégration/);
         assert.match(adminSource, /Configuration/);
         assert.match(adminSource, /type="password"/);
+        assert.match(appSource, /route\.view !== 'incidents' \|\| !route\.incidentId/);
+        assert.match(appSource, /flowsStore\.selectIncident\(null\)/);
+        assert.match(appSource, /if \(route\.incidentId\) flowsClient\.requestIncident\(route\.incidentId\)/);
     });
 });

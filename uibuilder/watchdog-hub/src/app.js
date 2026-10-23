@@ -144,6 +144,9 @@
             function onHashChange() {
                 var route = viewFromHash();
                 store.setView(route.view);
+                if (route.view !== 'incidents' || !route.incidentId) {
+                    flowsStore.selectIncident(null);
+                }
                 if (route.view === 'overview' || route.view === 'flows' || route.view === 'incidents') {
                     loadFlows(false);
                 }
@@ -557,14 +560,22 @@
                 pageSize: pageSize,
                 detailOpener: detailOpener,
                 liveMessage: liveMessage,
+                activityPartial: activityPartial,
                 setView: setView,
                 refresh: refresh,
                 retry: retry,
                 loadFlows: loadFlows,
+                loadAnomalies: loadAnomalies,
+                loadEvents: loadEvents,
+                selectAnomaly: selectAnomaly,
+                selectAnomalyFlow: selectAnomalyFlow,
+                selectEvent: selectEvent,
+                selectEventFlow: selectEventFlow,
                 openView: openView,
                 openIncident: openIncident,
                 openIncidentFlow: openIncidentFlow,
                 closeIncident: closeIncident,
+                openRelated: openRelated,
                 showFlowIncidents: showFlowIncidents,
                 selectFlow: selectFlow,
                 openAnomalyFromFlow: openAnomalyFromFlow,

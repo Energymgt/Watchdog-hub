@@ -2616,7 +2616,7 @@ body {
 
 .event-row {
     display: grid;
-    grid-template-columns: 8rem minmax(8rem, 1fr) minmax(7rem, 1fr) minmax(7rem, 1fr) minmax(8rem, 1fr);
+    grid-template-columns: 9.5rem minmax(0, 1fr) minmax(0, 1.2fr);
     gap: 0.7rem;
     align-items: center;
     width: 100%;
@@ -2854,6 +2854,16 @@ button.activity-timeline__item:focus-visible strong {
     .flows-table {
         min-width: 720px;
     }
+
+    .events-workspace,
+    .anomalies-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .event-detail,
+    .anomaly-detail {
+        position: static;
+    }
 }
 
 @media (max-width: 700px) {
@@ -2959,7 +2969,8 @@ button.activity-timeline__item:focus-visible strong {
     }
 
     .event-row {
-        min-width: 680px;
+        min-width: 0;
+        grid-template-columns: 1fr;
     }
 
     .anomalies-list-panel {

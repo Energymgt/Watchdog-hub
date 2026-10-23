@@ -78,6 +78,10 @@ describe('workspace UI Events', () => {
         assert.match(page, /Fermer le détail de l’événement/);
         assert.match(page, /payload/);
         assert.match(app, /createEventsStore/);
+        const exposed = app.slice(app.lastIndexOf('return {'), app.indexOf('template:'));
+        assert.match(exposed, /selectEvent:/);
+        assert.match(exposed, /loadEvents:/);
+        assert.match(exposed, /selectEventFlow:/);
         assert.match(app, /createEventsUibuilderClient/);
         assert.match(app, /state.view === 'events'/);
         assert.match(app, /eventsStore\.state\.selectedEvent/);
