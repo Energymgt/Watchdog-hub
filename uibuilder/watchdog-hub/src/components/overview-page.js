@@ -7,7 +7,7 @@
     var FLOW_STATE = {
         ok: { label: 'Opérationnel', tone: 'ok', rank: 3, bucket: 'ok' },
         degraded: { label: 'Dégradé', tone: 'warning', rank: 1, bucket: 'warning' },
-        down: { label: 'Indisponible', tone: 'high', rank: 0, bucket: 'failure' },
+        down: { label: 'Indisponible', tone: 'critical', rank: 0, bucket: 'failure' },
         unknown: { label: 'Inconnu', tone: 'unknown', rank: 2, bucket: 'unknown' }
     };
 
@@ -18,7 +18,7 @@
     function deviceState(device) {
         var state = device && device.state;
         var meta = formatters.stateMeta(state);
-        if (state === 'dead') return { label: meta.label || 'Hors service', tone: 'high', rank: 0, bucket: 'failure' };
+        if (state === 'dead') return { label: meta.label || 'Hors service', tone: 'critical', rank: 0, bucket: 'failure' };
         if (state === 'heartbeat_missing') return { label: meta.label || 'Heartbeat absent', tone: 'warning', rank: 1, bucket: 'warning' };
         if (state === 'cloud_down' || state === 'unknown_online') {
             return { label: meta.label || 'À surveiller', tone: 'warning', rank: 1, bucket: 'warning' };
@@ -35,61 +35,257 @@
         return incident && incident.state !== 'RESOLU' && incident.state !== 'CLOS';
     }
 
-    function addBucket(counts, bucket) {
-        counts[bucket] += 1;
+    function countDevices(devices) {
+        var counts = { total: devices.length, ok: 0, attention: 0, dead: 0, unknown: 0 };
+        devices.forEach(function (device) {
+            var bucket = deviceState(device).bucket;
+            if (bucket === 'failure') counts.dead += 1;
+            else if (bucket === 'warning') counts.attention += 1;
+            else if (bucket === 'unknown') counts.unknown += 1;
+            else counts.ok += 1;
+        });
+        return counts;
+    }
+
+    function flowPicture(summary) {
+        var down = summary.down || 0;
+        var degraded = summary.degraded || 0;
+        var unknown = summary.unknown || 0;
+        var ok = summary.ok || 0;
+        var total = summary.total || 0;
+        var counts = { total: total, ok: ok, degraded: degraded, down: down, unknown: unknown };
+        if (total === 0) {
+            return {
+                label: 'Aucun flux',
+                tone: 'unknown',
+                detail: 'Le registre ne contient aucun flux.',
+                counts: counts,
+                nominal: false
+            };
+        }
+        if (down > 0) {
+            return {
+                label: 'Indisponible',
+                tone: 'critical',
+                detail: down + (down > 1 ? ' flux indisponibles.' : ' flux indisponible.')
+                    + (unknown ? ' ' + unknown + ' reste' + (unknown > 1 ? 'nt' : '') + ' inconnu' + (unknown > 1 ? 's' : '') + '.' : ''),
+                counts: counts,
+                nominal: false
+            };
+        }
+        if (degraded > 0) {
+            return {
+                label: 'Dégradé',
+                tone: 'warning',
+                detail: degraded + (degraded > 1 ? ' flux dégradés.' : ' flux dégradé.')
+                    + (unknown ? ' ' + unknown + ' reste' + (unknown > 1 ? 'nt' : '') + ' inconnu' + (unknown > 1 ? 's' : '') + '.' : ''),
+                counts: counts,
+                nominal: false
+            };
+        }
+        if (unknown > 0) {
+            return {
+                label: 'Inconnu',
+                tone: 'unknown',
+                detail: unknown + ' flux sans état confirmé.',
+                counts: counts,
+                nominal: false
+            };
+        }
+        return {
+            label: 'Opérationnel',
+            tone: 'ok',
+            detail: total + (total > 1 ? ' flux opérationnels.' : ' flux opérationnel.'),
+            counts: counts,
+            nominal: true
+        };
+    }
+
+    function devicePicture(counts) {
+        if (counts.total === 0) {
+            return {
+                label: 'Aucun appareil',
+                tone: 'unknown',
+                detail: 'Le relevé confirme une flotte vide.',
+                counts: counts,
+                nominal: false
+            };
+        }
+        if (counts.dead > 0) {
+            return {
+                label: 'Hors service',
+                tone: 'critical',
+                detail: counts.dead + (counts.dead > 1 ? ' appareils hors service.' : ' appareil hors service.')
+                    + (counts.unknown ? ' ' + counts.unknown + ' reste' + (counts.unknown > 1 ? 'nt' : '') + ' inconnu' + (counts.unknown > 1 ? 's' : '') + '.' : ''),
+                counts: counts,
+                nominal: false
+            };
+        }
+        if (counts.attention > 0) {
+            return {
+                label: 'À surveiller',
+                tone: 'warning',
+                detail: counts.attention + (counts.attention > 1 ? ' appareils à surveiller.' : ' appareil à surveiller.')
+                    + (counts.unknown ? ' ' + counts.unknown + ' reste' + (counts.unknown > 1 ? 'nt' : '') + ' inconnu' + (counts.unknown > 1 ? 's' : '') + '.' : ''),
+                counts: counts,
+                nominal: false
+            };
+        }
+        if (counts.unknown > 0) {
+            return {
+                label: 'Inconnu',
+                tone: 'unknown',
+                detail: counts.unknown + ' appareil' + (counts.unknown > 1 ? 's' : '') + ' sans état confirmé.',
+                counts: counts,
+                nominal: false
+            };
+        }
+        return {
+            label: 'Opérationnel',
+            tone: 'ok',
+            detail: counts.total + (counts.total > 1 ? ' appareils opérationnels.' : ' appareil opérationnel.'),
+            counts: counts,
+            nominal: true
+        };
+    }
+
+    function withhold(picture, message) {
+        if (!picture.nominal) return picture;
+        return {
+            label: 'Non confirmé',
+            tone: 'unknown',
+            detail: message,
+            counts: picture.counts,
+            nominal: false
+        };
+    }
+
+    function describeFlows(view) {
+        var summary = view.flowSummary || {};
+        var known = flowsKnownFrom(summary);
+        if (!known) {
+            if (view.loading) {
+                return {
+                    known: false,
+                    status: 'loading',
+                    label: 'Lecture en cours',
+                    tone: 'unknown',
+                    detail: 'Les flux arrivent.',
+                    counts: null
+                };
+            }
+            if (view.flowsError) {
+                return {
+                    known: false,
+                    status: 'error',
+                    label: 'Erreur de chargement',
+                    tone: 'unknown',
+                    detail: 'Les flux n’ont pas pu être chargés. ' + view.flowsError,
+                    counts: null
+                };
+            }
+            return {
+                known: false,
+                status: 'missing',
+                label: 'Snapshot absent',
+                tone: 'unknown',
+                detail: 'Les flux n’ont pas été reçus.',
+                counts: null
+            };
+        }
+        var picture = flowPicture(summary);
+        if (view.connected === false) {
+            picture = withhold(picture, 'Le dernier relevé ne signalait aucun défaut de flux.');
+        }
+        picture.known = true;
+        picture.status = 'ready';
+        return picture;
+    }
+
+    function describeDevices(view) {
+        var fleetKnown = view.fleetKnown === true;
+        if (!fleetKnown) {
+            if (view.fleetError) {
+                return {
+                    known: false,
+                    status: 'error',
+                    label: 'Erreur de chargement',
+                    tone: 'unknown',
+                    detail: 'L’état des appareils n’a pas pu être chargé. ' + view.fleetError,
+                    counts: null
+                };
+            }
+            if (view.loading) {
+                return {
+                    known: false,
+                    status: 'loading',
+                    label: 'Lecture en cours',
+                    tone: 'unknown',
+                    detail: 'Les appareils arrivent.',
+                    counts: null
+                };
+            }
+            return {
+                known: false,
+                status: 'missing',
+                label: 'Snapshot absent',
+                tone: 'unknown',
+                detail: 'L’état des appareils n’a pas été reçu.',
+                counts: null
+            };
+        }
+
+        var devices = Array.isArray(view.devices) ? view.devices : null;
+        var expected = (view.fleetSummary || {}).total;
+        var emptyConfirmed = devices && devices.length === 0 && (expected || 0) === 0;
+        var sameLength = devices && (expected === undefined || expected === devices.length);
+        var picture;
+        if (emptyConfirmed) {
+            picture = devicePicture(countDevices(devices));
+        } else if (!sameLength) {
+            var partialCounts = devices ? countDevices(devices) : null;
+            return {
+                known: true,
+                status: 'partial',
+                label: 'Détail incomplet',
+                tone: 'unknown',
+                detail: 'Le détail des appareils est incomplet.',
+                counts: partialCounts,
+                nominal: false
+            };
+        } else {
+            picture = devicePicture(countDevices(devices));
+        }
+        if (view.connected === false || view.stale) {
+            picture = withhold(picture, 'Le dernier relevé ne signalait aucun défaut d’appareil.');
+        }
+        picture.known = true;
+        picture.status = 'ready';
+        return picture;
+    }
+
+    function reliabilityText(view) {
+        var flowsKnown = flowsKnownFrom(view.flowSummary);
+        var fleetKnown = view.fleetKnown === true;
+        if (view.loading && !flowsKnown && !fleetKnown) return '';
+        var notes = [];
+        if (view.connected === false) {
+            notes.push('Connexion interrompue. Les états affichés sont le dernier relevé reçu, pas un état actuel confirmé.');
+        }
+        if (view.stale && fleetKnown) notes.push('Le relevé des appareils est périmé.');
+        return notes.join(' ');
     }
 
     /**
      * Les contrats n'ont pas de gravité d'incident.
      * down = flux indisponible. dead = appareil hors service.
-     * Un incident actif est déjà porté par l'état du flux : il n'ajoute pas un élément compté.
+     * Un incident actif est déjà porté par l'état du flux : il n'ajoute pas une seconde ligne.
      */
     function buildOverview(view) {
         var summary = view.flowSummary || {};
-        var flowsKnown = flowsKnownFrom(summary);
-        var fleetKnown = view.fleetKnown === true;
-        var fleetSummary = view.fleetSummary || {};
         var flows = Array.isArray(view.flows) ? view.flows : [];
         var devices = Array.isArray(view.devices) ? view.devices : null;
         var incidents = (Array.isArray(view.incidents) ? view.incidents : []).filter(isActiveIncident);
-        var counts = { ok: 0, failure: 0, warning: 0, unknown: 0 };
-        var notes = [];
-        var loaded = false;
-
-        if (flowsKnown) {
-            loaded = true;
-            if (flows.length === (summary.total || 0)) {
-                flows.forEach(function (flow) { addBucket(counts, flowState(flow.status).bucket); });
-            } else {
-                counts.failure += summary.down || 0;
-                counts.warning += summary.degraded || 0;
-                counts.unknown += summary.unknown || 0;
-                counts.ok += summary.ok || 0;
-            }
-        } else if (!(view.loading && !fleetKnown)) {
-            notes.push(view.flowsError
-                ? 'Les flux n’ont pas pu être chargés.'
-                : 'Les flux n’ont pas été reçus.');
-        }
-
-        if (fleetKnown) {
-            loaded = true;
-            var expected = fleetSummary.total;
-            var sameLength = devices && (expected === undefined || expected === devices.length);
-            var emptyConfirmed = (!devices || devices.length === 0) && (expected || 0) === 0;
-            if (sameLength) {
-                devices.forEach(function (device) { addBucket(counts, deviceState(device).bucket); });
-            } else if (!emptyConfirmed) {
-                notes.push('Le détail des appareils est incomplet.');
-                if (devices) devices.forEach(function (device) { addBucket(counts, deviceState(device).bucket); });
-            }
-        } else if (!(view.loading && !flowsKnown)) {
-            notes.push(view.fleetError
-                ? 'L’état des appareils n’a pas pu être chargé.'
-                : 'L’état des appareils n’a pas été reçu.');
-        }
-
-        var watched = loaded ? counts.ok + counts.failure + counts.warning + counts.unknown : null;
         var flowById = {};
         flows.forEach(function (flow) { flowById[flow.flow_id] = flow; });
         var incidentFlowIds = {};
@@ -199,103 +395,13 @@
         });
 
         return {
-            counts: {
-                watched: watched,
-                failures: loaded ? counts.failure : null,
-                warnings: loaded ? counts.warning : null,
-                unknown: loaded ? counts.unknown : null,
-                ok: loaded ? counts.ok : null,
-                note: notes.join(' '),
-                partial: notes.length > 0
-            },
-            situation: describeSituation(view, counts, loaded, notes),
+            flows: describeFlows(view),
+            devices: describeDevices(view),
+            reliability: reliabilityText(view),
             attention: attention,
             review: review,
-            elements: elements
-        };
-    }
-
-    function describeSituation(view, counts, loaded, notes) {
-        var reliability = [];
-        if (view.connected === false) {
-            reliability.push('Connexion interrompue. Les états affichés sont le dernier relevé reçu, pas un état actuel confirmé.');
-        }
-        if (view.stale) {
-            reliability.push('Le relevé des appareils est périmé.');
-        }
-        notes.forEach(function (note) {
-            if (reliability.indexOf(note) === -1) reliability.push(note);
-        });
-
-        if (view.loading && !loaded) {
-            return {
-                label: 'Lecture en cours',
-                tone: 'unknown',
-                detail: 'Les données de supervision arrivent.',
-                reliability: ''
-            };
-        }
-
-        var picture;
-        if (!loaded) {
-            picture = {
-                label: 'État inconnu',
-                tone: 'unknown',
-                detail: 'Aucune donnée de supervision n’a été reçue.'
-            };
-        } else if (counts.failure > 0) {
-            picture = {
-                label: 'Des éléments sont indisponibles',
-                tone: 'high',
-                detail: counts.unknown > 0
-                    ? 'D’autres éléments restent inconnus.'
-                    : 'Au moins un flux est indisponible ou un appareil est hors service.'
-            };
-        } else if (counts.warning > 0) {
-            picture = {
-                label: 'Des éléments nécessitent votre attention',
-                tone: 'warning',
-                detail: counts.unknown > 0
-                    ? 'D’autres éléments restent inconnus.'
-                    : 'Au moins un flux est dégradé ou un appareil demande une surveillance.'
-            };
-        } else if (counts.unknown > 0 || notes.length > 0) {
-            picture = {
-                label: 'Des éléments sont à vérifier',
-                tone: 'unknown',
-                detail: 'La synthèse ne confirme pas que tout fonctionne.'
-            };
-        } else {
-            picture = {
-                label: 'Tout fonctionne',
-                tone: 'ok',
-                detail: 'Aucun défaut, avertissement ou inconnu dans les données reçues.'
-            };
-        }
-
-        if (view.connected === false && loaded) {
-            return {
-                label: picture.label === 'Tout fonctionne'
-                    ? 'Dernier relevé : aucun défaut signalé'
-                    : 'Dernier relevé : ' + picture.label.charAt(0).toLocaleLowerCase('fr-FR') + picture.label.slice(1),
-                tone: picture.tone === 'ok' ? 'unknown' : picture.tone,
-                detail: picture.detail,
-                reliability: reliability.join(' ')
-            };
-        }
-        if (view.stale && picture.label === 'Tout fonctionne') {
-            return {
-                label: 'État non confirmé',
-                tone: 'warning',
-                detail: 'Le dernier relevé ne signalait aucun défaut.',
-                reliability: reliability.join(' ')
-            };
-        }
-        return {
-            label: picture.label,
-            tone: picture.tone,
-            detail: picture.detail,
-            reliability: reliability.join(' ')
+            elements: elements,
+            summaryKnown: flowsKnownFrom(summary)
         };
     }
 
@@ -327,32 +433,16 @@
             flowsError: { type: String, default: '' },
             now: { type: Number, default: Date.now }
         },
-        data: function () {
-            return { query: '', scope: 'all' };
-        },
         computed: {
             flowsKnown: function () { return flowsKnownFrom(this.flowSummary); },
             initialLoading: function () {
                 return this.loading && !this.flowsKnown && !this.fleetKnown;
             },
             built: function () { return buildOverview(this); },
-            counts: function () { return this.built.counts; },
-            situation: function () { return buildOverview(this).situation; },
-            attentionItems: function () { return this.built.attention; },
-            reviewItems: function () { return this.built.review; },
-            watchedRows: function () { return this.built.elements; },
-            visibleRows: function () {
-                var scope = this.scope;
-                var query = this.query.trim().toLocaleLowerCase('fr-FR');
-                return this.watchedRows.filter(function (row) {
-                    if (scope === 'attention' && row.bucket !== 'failure' && row.bucket !== 'warning') return false;
-                    if (scope === 'review' && row.bucket !== 'unknown') return false;
-                    if (scope === 'flows' && row.kind !== 'Flux') return false;
-                    if (scope === 'devices' && row.kind !== 'Appareil') return false;
-                    if (!query) return true;
-                    return row.haystack.indexOf(query) !== -1;
-                });
-            }
+            flowsHealth: function () { return this.built.flows; },
+            devicesHealth: function () { return this.built.devices; },
+            reliability: function () { return this.built.reliability; },
+            attentionItems: function () { return this.built.attention; }
         },
         methods: {
             openItem: function (item) {
@@ -368,42 +458,43 @@
             },
             openView: function (view) {
                 this.$emit('open-view', view);
-            },
-            setScope: function (scope) { this.scope = scope; },
-            resetQuery: function () {
-                this.query = '';
-                this.scope = 'all';
             }
         },
         template:
             '<section class="overview-page" aria-labelledby="overview-title">' +
-                '<div class="overview-hero">' +
-                    '<div>' +
-                        '<p class="eyebrow">Supervision</p>' +
-                        '<h2 id="overview-title">Vue d’ensemble</h2>' +
-                        '<p class="overview-situation" :class="\'overview-situation--\' + situation.tone">' +
-                            '<strong>{{ situation.label }}</strong>' +
-                            '<span>{{ situation.detail }}</span>' +
-                        '</p>' +
-                        '<p v-if="situation.reliability" class="overview-reliability">{{ situation.reliability }}</p>' +
-                    '</div>' +
-                    '<div class="overview-hero__links">' +
-                        '<button class="overview-link" type="button" @click="openView(\'incidents\')">Incidents</button>' +
-                        '<button class="overview-link" type="button" @click="openView(\'flows\')">Flux</button>' +
-                        '<button class="overview-link" type="button" @click="openView(\'fleet\')">Appareils</button>' +
-                    '</div>' +
+                '<div class="workspace-heading">' +
+                    '<h2 id="overview-title">Vue d’ensemble</h2>' +
+                    '<p>Santé des flux métier et des appareils, puis les problèmes qui demandent une intervention.</p>' +
                 '</div>' +
-                '<section class="overview-kpis" aria-label="Indicateurs essentiels" :aria-busy="initialLoading ? \'true\' : \'false\'">' +
-                    '<div class="overview-kpi"><kpi-card label="Surveillés" :value="counts.watched" tone="unknown" :loading="initialLoading"></kpi-card></div>' +
-                    '<div class="overview-kpi"><kpi-card label="En défaut" :value="counts.failures" :tone="counts.failures > 0 ? \'high\' : \'unknown\'" :loading="initialLoading"></kpi-card></div>' +
-                    '<div class="overview-kpi"><kpi-card label="Avertissements" :value="counts.warnings" :tone="counts.warnings > 0 ? \'warning\' : \'unknown\'" :loading="initialLoading"></kpi-card></div>' +
-                    '<div class="overview-kpi"><kpi-card label="Inconnus" :value="counts.unknown" :tone="counts.unknown > 0 ? \'unknown\' : \'unknown\'" :loading="initialLoading"></kpi-card></div>' +
-                '</section>' +
-                '<p v-if="counts.note" class="overview-reliability">{{ counts.note }}</p>' +
+                '<p v-if="reliability" class="overview-reliability">{{ reliability }}</p>' +
+                '<div class="health-grid" aria-label="État du système">' +
+                    '<article class="health-block" :class="\'health-block--\' + flowsHealth.tone">' +
+                        '<header class="health-block__head"><h3>Flux métier</h3><span class="status-badge" :class="\'status-badge--\' + flowsHealth.tone">{{ flowsHealth.label }}</span></header>' +
+                        '<p class="health-block__detail">{{ flowsHealth.detail }}</p>' +
+                        '<dl v-if="flowsHealth.counts" class="health-counts">' +
+                            '<div><dt>Opérationnels</dt><dd>{{ flowsHealth.counts.ok }}</dd></div>' +
+                            '<div><dt>Dégradés</dt><dd>{{ flowsHealth.counts.degraded }}</dd></div>' +
+                            '<div><dt>Indisponibles</dt><dd>{{ flowsHealth.counts.down }}</dd></div>' +
+                            '<div><dt>Inconnus</dt><dd>{{ flowsHealth.counts.unknown }}</dd></div>' +
+                        '</dl>' +
+                        '<button class="overview-link" type="button" @click="openView(\'flows\')">Ouvrir les flux</button>' +
+                    '</article>' +
+                    '<article class="health-block" :class="\'health-block--\' + devicesHealth.tone">' +
+                        '<header class="health-block__head"><h3>Appareils</h3><span class="status-badge" :class="\'status-badge--\' + devicesHealth.tone">{{ devicesHealth.label }}</span></header>' +
+                        '<p class="health-block__detail">{{ devicesHealth.detail }}</p>' +
+                        '<dl v-if="devicesHealth.counts" class="health-counts">' +
+                            '<div><dt>Opérationnels</dt><dd>{{ devicesHealth.counts.ok }}</dd></div>' +
+                            '<div><dt>À surveiller</dt><dd>{{ devicesHealth.counts.attention }}</dd></div>' +
+                            '<div><dt>Hors service</dt><dd>{{ devicesHealth.counts.dead }}</dd></div>' +
+                            '<div><dt>Inconnus</dt><dd>{{ devicesHealth.counts.unknown }}</dd></div>' +
+                        '</dl>' +
+                        '<button class="overview-link" type="button" @click="openView(\'fleet\')">Ouvrir les appareils</button>' +
+                    '</article>' +
+                '</div>' +
                 '<section class="overview-panel" aria-labelledby="priority-title">' +
                     '<div class="section-heading"><h3 id="priority-title">À traiter</h3><span class="activity-count">{{ attentionItems.length }}</span></div>' +
                     '<p v-if="initialLoading" class="empty-inline">Lecture des problèmes en cours.</p>' +
-                    '<p v-else-if="!attentionItems.length" class="empty-inline">Aucun défaut ni avertissement confirmé.</p>' +
+                    '<p v-else-if="!attentionItems.length" class="empty-inline">Aucun incident actif, flux en défaut ou appareil en défaut.</p>' +
                     '<ol v-else class="priority-list">' +
                         '<li v-for="item in attentionItems" :key="item.key">' +
                             '<div class="priority-list__item" :class="\'priority-list__item--\' + item.tone">' +
@@ -420,52 +511,13 @@
                             '</div>' +
                         '</li>' +
                     '</ol>' +
+                    '<button class="overview-link" type="button" @click="openView(\'incidents\')">Ouvrir les incidents</button>' +
                 '</section>' +
-                '<section v-if="reviewItems.length" class="overview-panel" aria-labelledby="review-title">' +
-                    '<div class="section-heading"><h3 id="review-title">À vérifier</h3><span class="activity-count">{{ reviewItems.length }}</span></div>' +
-                    '<ol class="priority-list">' +
-                        '<li v-for="item in reviewItems" :key="item.key">' +
-                            '<button type="button" class="priority-list__item priority-list__item--unknown" @click="openItem(item)">' +
-                                '<span class="priority-list__top"><span class="priority-list__id">{{ item.kind }}</span><span class="priority-list__meta">{{ item.stateLabel }} · <span :title="item.sinceTitle">{{ item.since }}</span></span></span>' +
-                                '<strong class="priority-list__title">{{ item.name }}</strong>' +
-                                '<small class="priority-list__context">{{ item.cause }}</small>' +
-                                '<span v-if="item.sign" class="priority-list__context" :title="item.signTitle">{{ item.sign }}</span>' +
-                            '</button>' +
-                        '</li>' +
-                    '</ol>' +
-                '</section>' +
-                '<section class="overview-panel" aria-labelledby="watched-title">' +
-                    '<div class="section-heading"><h3 id="watched-title">Éléments surveillés</h3><span class="activity-count">{{ visibleRows.length }}</span></div>' +
-                    '<div class="watch-toolbar">' +
-                        '<div class="watch-scopes" role="group" aria-label="Filtrer les éléments">' +
-                            '<button type="button" :aria-pressed="scope === \'all\' ? \'true\' : \'false\'" @click="setScope(\'all\')">Tous</button>' +
-                            '<button type="button" :aria-pressed="scope === \'attention\' ? \'true\' : \'false\'" @click="setScope(\'attention\')">À traiter</button>' +
-                            '<button type="button" :aria-pressed="scope === \'review\' ? \'true\' : \'false\'" @click="setScope(\'review\')">À vérifier</button>' +
-                            '<button type="button" :aria-pressed="scope === \'flows\' ? \'true\' : \'false\'" @click="setScope(\'flows\')">Flux</button>' +
-                            '<button type="button" :aria-pressed="scope === \'devices\' ? \'true\' : \'false\'" @click="setScope(\'devices\')">Appareils</button>' +
-                        '</div>' +
-                        '<label class="watch-search" for="overview-search">Recherche<input id="overview-search" type="search" v-model="query" placeholder="Nom, état ou cause"></label>' +
-                    '</div>' +
-                    '<p class="results-summary">{{ visibleRows.length }} élément{{ visibleRows.length > 1 ? \'s\' : \'\' }} affiché{{ visibleRows.length > 1 ? \'s\' : \'\' }}.</p>' +
-                    '<div v-if="visibleRows.length" class="watch-wrap">' +
-                        '<table class="watch-table"><caption class="sr-only">Flux et appareils, problèmes en premier</caption>' +
-                            '<thead><tr><th scope="col">Élément</th><th scope="col">Type</th><th scope="col">État</th><th scope="col">Repère</th><th scope="col">Cause</th><th scope="col">Action</th></tr></thead>' +
-                            '<tbody><tr v-for="row in visibleRows" :key="row.key">' +
-                                '<td><span class="watch-label">Élément</span><strong :title="row.name">{{ row.name }}</strong></td>' +
-                                '<td><span class="watch-label">Type</span>{{ row.kind }}</td>' +
-                                '<td><span class="watch-label">État</span><span class="status-badge" :class="\'status-badge--\' + row.tone">{{ row.stateLabel }}</span></td>' +
-                                '<td :title="row.sinceTitle"><span class="watch-label">Repère</span>{{ row.since }}<small v-if="row.sign" class="cell-note" :title="row.signTitle">{{ row.sign }}</small></td>' +
-                                '<td><span class="watch-label">Cause</span>{{ row.cause }}</td>' +
-                                '<td><button class="detail-button" type="button" :aria-label="row.actionLabel" @click="openItem(row)">{{ row.action }}</button></td>' +
-                            '</tr></tbody></table>' +
-                    '</div>' +
-                    '<p v-else-if="query || scope !== \'all\'" class="empty-inline">Aucun élément ne correspond. <button type="button" class="overview-link" @click="resetQuery">Réinitialiser</button></p>' +
-                    '<p v-else class="empty-inline">Aucun élément surveillé pour le moment.</p>' +
-                '</section>' +
-                '<details class="overview-panel overview-activity"><summary id="overview-activity-title">Activité récente</summary>' +
+                '<section class="overview-panel" aria-labelledby="overview-activity-title">' +
+                    '<div class="section-heading"><h3 id="overview-activity-title">Activité récente</h3></div>' +
                     '<p v-if="activityPartial" class="activity-partial">Certaines sources d’activité sont indisponibles.</p>' +
                     '<activity-timeline :items="activity" :now="now" @open="openActivity"></activity-timeline>' +
-                '</details>' +
+                '</section>' +
             '</section>'
     };
 }(window));

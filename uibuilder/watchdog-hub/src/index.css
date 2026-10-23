@@ -1895,7 +1895,7 @@ textarea:focus {
     --primary-hover: #a6d6ff;
     --ok: #6fd7a2;
     --ok-bg: #123226;
-    --warning: #e6c46a;
+    --warning: #e39a3c;
     --warning-bg: #3a3014;
     --high: #e89a62;
     --high-bg: #3a2416;
@@ -3026,7 +3026,7 @@ button.activity-timeline__item:focus-visible strong {
     --primary-hover: #064c87;
     --ok: #08783e;
     --ok-bg: #e6f5ec;
-    --warning: #815b00;
+    --warning: #9a4d00;
     --warning-bg: #fff3cd;
     --high: #a33a00;
     --high-bg: #ffeadf;
@@ -3230,5 +3230,162 @@ button.activity-timeline__item:focus-visible strong {
 
     .app-nav__journal {
         width: 100%;
+    }
+}
+
+.app-nav {
+    background: var(--surface);
+}
+
+.app-nav__sub {
+    display: grid;
+    gap: 0.05rem;
+    margin: 0.1rem 0 0.2rem 0.55rem;
+    padding-left: 0.45rem;
+    border-left: 1px solid var(--border);
+}
+
+.app-nav__sub .app-nav__item {
+    min-height: 1.7rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.app-nav__item--active {
+    color: var(--text);
+}
+
+.health-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.health-block {
+    display: grid;
+    align-content: start;
+    gap: 0.45rem;
+    padding: 0.85rem 0.9rem;
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 0.35rem;
+    background: var(--surface);
+}
+
+.health-block--ok { border-left-color: var(--ok); }
+.health-block--warning { border-left-color: var(--warning); }
+.health-block--critical { border-left-color: var(--critical); }
+.health-block--high { border-left-color: var(--high); }
+.health-block--unknown { border-left-color: var(--unknown); }
+
+.health-block__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.health-block h3 {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.health-block__detail {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+}
+
+.health-counts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
+    margin: 0;
+}
+
+.health-counts div {
+    min-width: 0;
+    padding: 0.35rem 0.4rem;
+    border-radius: 0.25rem;
+    background: var(--surface-muted);
+}
+
+.health-counts dt {
+    color: var(--muted);
+    font-size: 0.68rem;
+}
+
+.health-counts dd {
+    margin: 0.1rem 0 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+}
+
+.incident-reading {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0.75rem 0;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    background: var(--surface-muted);
+}
+
+.incident-reading p {
+    display: grid;
+    gap: 0.15rem;
+    margin: 0;
+}
+
+.incident-reading p > span:first-child {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.admin-group-title {
+    margin: 1rem 0 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.anomaly-groups {
+    display: grid;
+    gap: 1rem;
+}
+
+.anomaly-group h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0 0 0.4rem;
+    font-size: 0.92rem;
+}
+
+.anomaly-group--open h4 { color: var(--warning); }
+.anomaly-group--closed h4 { color: var(--muted); }
+
+.activity-timeline > li {
+    padding-left: 0.55rem;
+    border-left: 3px solid var(--unknown);
+}
+
+.activity-timeline > li.activity-timeline__category--incident { border-left-color: var(--critical); }
+.activity-timeline > li.activity-timeline__category--anomaly { border-left-color: var(--warning); }
+.activity-timeline > li.activity-timeline__category--fleet { border-left-color: var(--primary); }
+.activity-timeline__category--incident { color: var(--critical); }
+.activity-timeline__category--anomaly { color: var(--warning); }
+.activity-timeline__category--fleet { color: var(--primary); }
+.activity-timeline__category--event { color: var(--muted); }
+
+@media (max-width: 800px) {
+    .health-grid,
+    .health-counts {
+        grid-template-columns: 1fr 1fr;
     }
 }

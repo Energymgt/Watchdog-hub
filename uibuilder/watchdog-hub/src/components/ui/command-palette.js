@@ -21,12 +21,12 @@
             commands: function () {
                 return [
                     { id: 'overview', label: 'Vue d’ensemble', hint: 'Navigation' },
-                    { id: 'incidents', label: 'Incidents', hint: 'Navigation' },
-                    { id: 'flows', label: 'Flux', hint: 'Navigation' },
-                    { id: 'anomalies', label: 'Anomalies', hint: 'Journal' },
-                    { id: 'events', label: 'Événements', hint: 'Journal' },
+                    { id: 'flows', label: 'Flux métier', hint: 'Navigation' },
                     { id: 'fleet', label: 'Appareils', hint: 'Navigation' },
-                    { id: 'admin', label: 'Paramètres', hint: 'Navigation' }
+                    { id: 'incidents', label: 'Incidents', hint: 'Problèmes' },
+                    { id: 'anomalies', label: 'Anomalies', hint: 'Problèmes' },
+                    { id: 'events', label: 'Événements', hint: 'Problèmes' },
+                    { id: 'admin', label: 'Configuration', hint: 'Navigation' }
                 ];
             },
             results: function () {

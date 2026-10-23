@@ -43,7 +43,7 @@
         },
         template:
             '<section class="flows-section" aria-labelledby="incidents-list-title" :aria-busy="refreshing ? \'true\' : \'false\'">' +
-                '<div class="section-heading"><div><p class="eyebrow">Workbench opérateur</p><h2 id="incidents-list-title">Incidents</h2></div><span class="activity-count">{{ incidents.length }} résultat{{ incidents.length > 1 ? \'s\' : \'\' }}</span></div>' +
+                '<div class="section-heading"><h2 id="incidents-list-title">Incidents</h2><span class="activity-count">{{ incidents.length }} résultat{{ incidents.length > 1 ? \'s\' : \'\' }}</span></div>' +
                 '<div v-if="incidents.length" class="incident-workbench">' +
                     '<section v-for="group in groups" :key="group.state" class="incident-group" :aria-label="meta(group.state).label">' +
                         '<h3>{{ meta(group.state).label }} <span>{{ group.incidents.length }}</span></h3>' +

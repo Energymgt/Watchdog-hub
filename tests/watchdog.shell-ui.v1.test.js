@@ -94,24 +94,23 @@ describe('contrat du shell UI Watchdog Hub', () => {
         const css = fs.readFileSync(path.join(UI_ROOT, 'index.css'), 'utf8');
 
         assert.match(nav, /Vue d’ensemble/);
-        assert.match(nav, /Flux/);
+        assert.match(nav, /Flux métier/);
         assert.match(nav, /Appareils/);
+        assert.match(nav, /Problèmes/);
         assert.match(nav, /Incidents/);
-        assert.match(nav, /Paramètres/);
-        assert.match(nav, /Journal/);
+        assert.match(nav, /Configuration/);
         assert.match(nav, /Anomalies/);
         assert.match(nav, /Événements/);
+        assert.match(nav, /app-nav__sub/);
+        assert.doesNotMatch(nav, /Journal/);
         assert.match(nav, /anomalies.*update:view|update:view.*anomalies/);
         assert.doesNotMatch(nav, /<details/);
         assert.match(nav, /update:view.*events|events.*update:view/);
         assert.doesNotMatch(nav, /open-command/);
 
         assert.match(header, /header-secondary/);
-        assert.match(header, /Des éléments nécessitent votre attention/);
         assert.match(header, /Dernier relevé/);
-        assert.match(header, /État inconnu/);
-        assert.match(header, /État non confirmé/);
-        assert.match(header, /Tout fonctionne/);
+        assert.doesNotMatch(header, /Tout fonctionne/);
         assert.match(header, /WebSocket connected/);
         assert.match(header, /open-command/);
         assert.match(app, /@open-command="openCommandPalette"/);
@@ -124,17 +123,20 @@ describe('contrat du shell UI Watchdog Hub', () => {
     it('place la vue d’ensemble comme lecture d’état, pas comme console marketing', () => {
         const overview = fs.readFileSync(path.join(UI_ROOT, 'components/overview-page.js'), 'utf8');
         assert.match(overview, /Vue d’ensemble/);
+        assert.match(overview, /Flux métier/);
         assert.match(overview, /À traiter/);
-        assert.match(overview, /Éléments surveillés/);
         assert.match(overview, /Activité récente/);
+        assert.match(overview, /Snapshot absent/);
+        assert.doesNotMatch(overview, /Éléments surveillés/);
+        assert.doesNotMatch(overview, /Tout fonctionne/);
         assert.match(overview, /recentTransitions/);
         assert.match(overview, /openView/);
         assert.match(overview, /activity-timeline/);
         assert.match(overview, /activity/);
-        assert.match(overview, /Tout fonctionne/);
         assert.match(overview, /Dégradé/);
         assert.match(overview, /Inconnu/);
-        assert.match(overview, /À vérifier/);
+        assert.match(overview, /Non confirmé/);
+        assert.doesNotMatch(overview, /À vérifier/);
         assert.match(overview, /Non daté/);
         assert.match(overview, /Incident ouvert depuis/);
         assert.match(overview, /Dernier heartbeat/);
@@ -193,11 +195,11 @@ describe('contrat du shell UI Watchdog Hub', () => {
         vm.createContext(context);
         vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/overview-page.js'), 'utf8'), context);
         vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/fleet/fleet-header.js'), 'utf8'), context);
-        const overview = context.window.WatchdogHub.components.OverviewPage;
+        const build = context.window.WatchdogHub.overviewModel.build;
         const header = context.window.WatchdogHub.components.FleetHeader;
         const flowsOk = { total: 2, ok: 2, degraded: 0, down: 0, unknown: 0, incidentsActive: 0 };
 
-        const partial = overview.computed.situation.call({
+        const partial = build({
             loading: false,
             connected: true,
             stale: false,
@@ -205,10 +207,13 @@ describe('contrat du shell UI Watchdog Hub', () => {
             flowSummary: flowsOk,
             fleetSummary: {}
         });
-        assert.equal(partial.tone, 'unknown');
-        assert.notEqual(partial.label, 'Tout fonctionne');
+        assert.equal(partial.flows.label, 'Opérationnel');
+        assert.equal(partial.flows.tone, 'ok');
+        assert.equal(partial.devices.status, 'missing');
+        assert.notEqual(partial.devices.tone, 'ok');
+        assert.match(partial.devices.detail, /n’a pas été reçu/);
 
-        const nominal = overview.computed.situation.call({
+        const nominal = build({
             loading: false,
             connected: true,
             stale: false,
@@ -217,9 +222,12 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { alerts: 0, total: 1 },
             devices: [{ state: 'ok', name: 'Passerelle', uuid: 'gw-1' }]
         });
-        assert.equal(nominal.label, 'Tout fonctionne');
+        assert.equal(nominal.flows.label, 'Opérationnel');
+        assert.equal(nominal.devices.label, 'Opérationnel');
+        assert.equal(nominal.flows.tone, 'ok');
+        assert.equal(nominal.devices.tone, 'ok');
 
-        const disconnected = overview.computed.situation.call({
+        const disconnected = build({
             loading: false,
             connected: false,
             stale: false,
@@ -228,11 +236,13 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { alerts: 0, total: 1 },
             devices: [{ state: 'ok' }]
         });
-        assert.equal(disconnected.label, 'Dernier relevé : aucun défaut signalé');
+        assert.equal(disconnected.flows.label, 'Non confirmé');
+        assert.equal(disconnected.devices.label, 'Non confirmé');
         assert.match(disconnected.reliability, /Connexion interrompue/);
-        assert.notEqual(disconnected.tone, 'ok');
+        assert.notEqual(disconnected.flows.tone, 'ok');
+        assert.doesNotMatch(disconnected.flows.label, /Dernier relevé/);
 
-        const stale = overview.computed.situation.call({
+        const stale = build({
             loading: false,
             connected: true,
             stale: true,
@@ -241,11 +251,12 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { alerts: 0, total: 1 },
             devices: [{ state: 'ok' }]
         });
-        assert.equal(stale.label, 'État non confirmé');
+        assert.equal(stale.flows.label, 'Opérationnel');
+        assert.equal(stale.devices.label, 'Non confirmé');
         assert.match(stale.reliability, /périmé/);
-        assert.notEqual(stale.label, 'Tout fonctionne');
+        assert.notEqual(stale.devices.tone, 'ok');
 
-        const unknownOverview = overview.computed.situation.call({
+        const unknownOverview = build({
             loading: false,
             connected: true,
             stale: false,
@@ -254,35 +265,12 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { alerts: 0, total: 1 },
             devices: [{ state: 'ok' }]
         });
-        assert.equal(unknownOverview.tone, 'unknown');
-        assert.notEqual(unknownOverview.label, 'Tout fonctionne');
+        assert.equal(unknownOverview.flows.label, 'Inconnu');
+        assert.equal(unknownOverview.flows.tone, 'unknown');
+        assert.equal(unknownOverview.devices.label, 'Opérationnel');
 
-        const unknownFlows = header.computed.systemState.call({
-            connected: true,
-            generatedAt: 1,
-            flowsKnown: true,
-            flowSummary: { total: 1, down: 0, degraded: 0, unknown: 1, incidentsActive: 0 },
-            fleetSummary: { alerts: 0 }
-        });
-        assert.equal(unknownFlows.label, 'Des éléments sont à vérifier');
-        assert.notEqual(unknownFlows.label, 'Tout fonctionne');
-
-        const unknownLabel = header.computed.flowsLabel.call({
-            flowsKnown: true,
-            affectedFlows: 0,
-            flowSummary: { unknown: 3 }
-        });
-        assert.equal(unknownLabel, '3 flux non confirmés');
-
-        const healthy = header.computed.systemState.call({
-            connected: true,
-            generatedAt: 1,
-            flowsKnown: true,
-            flowSummary: flowsOk,
-            fleetSummary: { alerts: 0 }
-        });
-        assert.equal(healthy.label, 'Tout fonctionne');
-
+        assert.match(header.template, /Dernier relevé/);
+        assert.doesNotMatch(header.template, /Tout fonctionne/);
         const missingSource = header.computed.balenaState.call({ sourceStatus: {} });
         assert.equal(missingSource, 'unknown');
     });
@@ -334,20 +322,6 @@ describe('contrat du shell UI Watchdog Hub', () => {
                 return acc;
             }, { total: 0, ok: 0, degraded: 0, down: 0, unknown: 0, incidentsActive: 0 });
         }
-        function assertExclusive(counts) {
-            assert.equal(
-                counts.watched,
-                counts.ok + counts.failures + counts.warnings + counts.unknown
-            );
-        }
-        function visible(model, scope, query) {
-            return page.computed.visibleRows.call({
-                scope: scope,
-                query: query,
-                watchedRows: model.elements
-            });
-        }
-
         const unknownOnly = build({
             loading: false,
             connected: true,
@@ -366,12 +340,11 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { total: 1, alerts: 0 },
             devices: [device('gw', 'GW-01', 'ok')]
         });
-        assertExclusive(unknownOnly.counts);
-        assert.equal(unknownOnly.counts.unknown, 3);
-        assert.equal(unknownOnly.counts.failures, 0);
-        assert.equal(unknownOnly.counts.warnings, 0);
-        assert.equal(unknownOnly.situation.label, 'Des éléments sont à vérifier');
-        assert.notEqual(unknownOnly.situation.label, 'Tout fonctionne');
+        assert.equal(unknownOnly.flows.counts.unknown, 3);
+        assert.equal(unknownOnly.flows.counts.down, 0);
+        assert.equal(unknownOnly.flows.counts.degraded, 0);
+        assert.equal(unknownOnly.flows.label, 'Inconnu');
+        assert.equal(unknownOnly.devices.label, 'Opérationnel');
         assert.equal(unknownOnly.attention.length, 0);
         assert.equal(unknownOnly.review.length, 3);
         assert.equal(unknownOnly.review[0].since, 'Non daté');
@@ -395,13 +368,14 @@ describe('contrat du shell UI Watchdog Hub', () => {
                 device('mort', 'Appareil hors service', 'dead')
             ]
         });
-        assertExclusive(mixed.counts);
-        assert.equal(mixed.counts.failures, 2);
-        assert.equal(mixed.counts.unknown, 2);
-        assert.equal(mixed.counts.warnings, 0);
-        assert.equal(mixed.counts.ok, 2);
-        assert.equal(mixed.situation.label, 'Des éléments sont indisponibles');
-        assert.match(mixed.situation.detail, /inconnus/);
+        assert.equal(mixed.flows.counts.down, 1);
+        assert.equal(mixed.flows.counts.unknown, 1);
+        assert.equal(mixed.flows.counts.ok, 1);
+        assert.equal(mixed.devices.counts.dead, 1);
+        assert.equal(mixed.devices.counts.unknown, 1);
+        assert.equal(mixed.devices.counts.ok, 1);
+        assert.equal(mixed.flows.label, 'Indisponible');
+        assert.match(mixed.flows.detail, /inconnu/);
         assert.equal(
             mixed.attention.map(function (item) { return item.key; }).sort().join('|'),
             'device:mort|flow:indispo'
@@ -410,9 +384,8 @@ describe('contrat du shell UI Watchdog Hub', () => {
             mixed.review.map(function (item) { return item.key; }).sort().join('|'),
             'device:mystere|flow:inconnu'
         );
-        assert.equal(visible(mixed, 'review', '').every(function (row) { return row.bucket === 'unknown'; }), true);
-        assert.equal(visible(mixed, 'attention', '').some(function (row) { return row.bucket === 'unknown'; }), false);
-        assert.equal(visible(mixed, 'all', 'hors service').length, 1);
+        assert.equal(mixed.attention.some(function (row) { return row.bucket === 'unknown'; }), false);
+        assert.equal(mixed.review.every(function (row) { return row.bucket === 'unknown'; }), true);
         const longName = 'Passerelle-de-toit-nord-'.repeat(12) + 'Fin';
         const longModel = build({
             loading: false,
@@ -424,7 +397,6 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { total: 0, alerts: 0 },
             devices: []
         });
-        assert.equal(visible(longModel, 'all', 'toit-nord').length, 1);
         assert.equal(longModel.elements[0].name, longName);
 
         const emptyFleet = build({
@@ -437,10 +409,10 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { total: 0, alerts: 0 },
             devices: []
         });
-        assert.equal(emptyFleet.situation.label, 'Tout fonctionne');
-        assert.equal(emptyFleet.counts.note, '');
-        assert.equal(emptyFleet.counts.watched, 1);
-        assert.equal(emptyFleet.counts.unknown, 0);
+        assert.equal(emptyFleet.flows.label, 'Opérationnel');
+        assert.equal(emptyFleet.devices.label, 'Aucun appareil');
+        assert.notEqual(emptyFleet.devices.tone, 'ok');
+        assert.equal(emptyFleet.flows.counts.unknown, 0);
 
         const fleetMissing = build({
             loading: false,
@@ -452,11 +424,10 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: {},
             devices: []
         });
-        assert.equal(fleetMissing.situation.label, 'Des éléments sont à vérifier');
-        assert.match(fleetMissing.counts.note, /n’a pas été reçu/);
-        assert.equal(fleetMissing.counts.unknown, 0);
-        assert.equal(fleetMissing.counts.watched, 1);
-        assert.notEqual(fleetMissing.situation.label, 'Tout fonctionne');
+        assert.equal(fleetMissing.flows.label, 'Opérationnel');
+        assert.equal(fleetMissing.devices.status, 'missing');
+        assert.match(fleetMissing.devices.detail, /n’a pas été reçu/);
+        assert.notEqual(fleetMissing.devices.tone, 'ok');
 
         const fleetFailed = build({
             loading: false,
@@ -469,9 +440,10 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: {},
             devices: []
         });
-        assert.match(fleetFailed.counts.note, /n’a pas pu être chargé/);
-        assert.doesNotMatch(fleetFailed.counts.note, /n’a pas été reçu/);
-        assert.notEqual(fleetFailed.situation.label, 'Tout fonctionne');
+        assert.equal(fleetFailed.flows.label, 'Opérationnel');
+        assert.match(fleetFailed.devices.detail, /n’a pas pu être chargé/);
+        assert.doesNotMatch(fleetFailed.devices.detail, /n’a pas été reçu/);
+        assert.notEqual(fleetFailed.devices.tone, 'ok');
 
         const nothing = build({
             loading: false,
@@ -482,10 +454,10 @@ describe('contrat du shell UI Watchdog Hub', () => {
             flows: [],
             devices: null
         });
-        assert.equal(nothing.counts.watched, null);
-        assert.equal(nothing.counts.failures, null);
-        assert.equal(nothing.counts.unknown, null);
-        assert.equal(nothing.situation.label, 'État inconnu');
+        assert.equal(nothing.flows.counts, null);
+        assert.equal(nothing.devices.counts, null);
+        assert.equal(nothing.flows.label, 'Snapshot absent');
+        assert.equal(nothing.devices.label, 'Snapshot absent');
         const nothingOffline = build({
             loading: false,
             connected: false,
@@ -495,9 +467,10 @@ describe('contrat du shell UI Watchdog Hub', () => {
             flows: [],
             devices: null
         });
-        assert.equal(nothingOffline.situation.label, 'État inconnu');
-        assert.match(nothingOffline.situation.reliability, /Connexion interrompue/);
-        assert.doesNotMatch(nothingOffline.situation.label, /Dernier relevé/);
+        assert.equal(nothingOffline.flows.label, 'Snapshot absent');
+        assert.match(nothingOffline.reliability, /Connexion interrompue/);
+        assert.doesNotMatch(nothingOffline.flows.label, /Dernier relevé/);
+        assert.doesNotMatch(nothingOffline.devices.label, /Dernier relevé/);
 
         const loading = build({
             loading: true,
@@ -508,9 +481,10 @@ describe('contrat du shell UI Watchdog Hub', () => {
             flows: [],
             devices: []
         });
-        assert.equal(loading.situation.label, 'Lecture en cours');
-        assert.equal(loading.situation.reliability, '');
-        assert.equal(loading.counts.watched, null);
+        assert.equal(loading.flows.label, 'Lecture en cours');
+        assert.equal(loading.devices.label, 'Lecture en cours');
+        assert.equal(loading.reliability, '');
+        assert.equal(loading.flows.counts, null);
 
         const opened = '2026-10-20T10:00:00Z';
         const duplicated = build({
@@ -574,12 +548,13 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { total: 1, alerts: 1 },
             devices: [device('mort', 'Appareil hors service', 'dead')]
         });
-        assert.equal(lostFault.situation.label, 'Dernier relevé : des éléments sont indisponibles');
-        assert.notEqual(lostFault.situation.label, 'Des éléments sont indisponibles');
-        assert.match(lostFault.situation.reliability, /Connexion interrompue/);
-        assert.match(lostFault.situation.reliability, /pas un état actuel confirmé/);
-        assert.match(lostFault.situation.reliability, /périmé/);
-        assert.equal(lostFault.counts.failures, 2);
+        assert.equal(lostFault.flows.label, 'Indisponible');
+        assert.equal(lostFault.devices.label, 'Hors service');
+        assert.match(lostFault.reliability, /Connexion interrompue/);
+        assert.match(lostFault.reliability, /pas un état actuel confirmé/);
+        assert.match(lostFault.reliability, /périmé/);
+        assert.equal(lostFault.flows.counts.down, 1);
+        assert.equal(lostFault.devices.counts.dead, 1);
 
         const staleFault = build({
             loading: false,
@@ -594,40 +569,12 @@ describe('contrat du shell UI Watchdog Hub', () => {
             fleetSummary: { total: 1, alerts: 0 },
             devices: [device('gw', 'GW-01', 'ok')]
         });
-        assert.equal(staleFault.situation.label, 'Des éléments sont indisponibles');
-        assert.match(staleFault.situation.reliability, /périmé/);
+        assert.equal(staleFault.flows.label, 'Indisponible');
+        assert.equal(staleFault.devices.label, 'Non confirmé');
+        assert.match(staleFault.reliability, /périmé/);
         assert.equal(staleFault.attention.length, 1);
         assert.equal(staleFault.attention[0].key, 'incident:INC-4');
-
-        const offlineHeader = header.computed.systemState.call({
-            connected: false,
-            generatedAt: 1,
-            flowsKnown: true,
-            stale: true,
-            flowSummary: { total: 1, down: 1, degraded: 0, unknown: 0, incidentsActive: 1 },
-            fleetSummary: { alerts: 1 },
-            devices: [{ state: 'dead' }]
-        });
-        assert.equal(offlineHeader.label, 'Dernier relevé : des éléments sont indisponibles');
-        const offlineEmpty = header.computed.systemState.call({
-            connected: false,
-            generatedAt: null,
-            flowsKnown: false,
-            flowSummary: {},
-            fleetSummary: {},
-            devices: []
-        });
-        assert.equal(offlineEmpty.label, 'État inconnu');
-        const staleHeader = header.computed.systemState.call({
-            connected: true,
-            generatedAt: 1,
-            flowsKnown: true,
-            stale: true,
-            flowSummary: { total: 1, down: 0, degraded: 0, unknown: 0, incidentsActive: 0 },
-            fleetSummary: { alerts: 0 },
-            devices: [{ state: 'ok' }]
-        });
-        assert.equal(staleHeader.label, 'État non confirmé');
+        assert.doesNotMatch(header.template, /Tout fonctionne/);
 
         const router = hub.hashRouter;
         for (const view of ['flows', 'admin', 'anomalies', 'events', 'fleet', 'incidents']) {
@@ -638,12 +585,15 @@ describe('contrat du shell UI Watchdog Hub', () => {
         const overviewSource = fs.readFileSync(path.join(UI_ROOT, 'components/overview-page.js'), 'utf8');
         const appSource = fs.readFileSync(path.join(UI_ROOT, 'app.js'), 'utf8');
         const adminSource = fs.readFileSync(path.join(UI_ROOT, 'components/admin/admin-page.js'), 'utf8');
-        assert.match(overviewSource, /query: '', scope: 'all'/);
+        assert.doesNotMatch(overviewSource, /scope: 'all'/);
         assert.doesNotMatch(overviewSource, /watch\s*:/);
+        assert.match(overviewSource, /Flux métier/);
+        assert.match(overviewSource, /Activité récente/);
         const overviewTag = appSource.slice(appSource.indexOf('<overview-page'), appSource.indexOf('</overview-page>'));
         assert.equal(overviewTag.includes(':key='), false);
         assert.match(adminSource, /Connecter un appareil/);
         assert.match(adminSource, /Tester l’intégration/);
-        assert.match(adminSource, /Paramètres/);
+        assert.match(adminSource, /Configuration/);
+        assert.match(adminSource, /type="password"/);
     });
 });

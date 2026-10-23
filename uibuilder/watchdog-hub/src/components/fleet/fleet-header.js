@@ -15,10 +15,7 @@
             lastEvaluationAt: { type: [String, Number], default: null },
             nextPollAt: { type: [String, Number], default: null },
             now: { type: Number, default: Date.now },
-            fleetName: { type: String, default: 'Watchdog Hub' },
-            flowSummary: { type: Object, default: function () { return {}; } },
-            fleetSummary: { type: Object, default: function () { return {}; } },
-            devices: { type: Array, default: function () { return []; } }
+            fleetName: { type: String, default: 'Watchdog Hub' }
         },
         data: function () {
             return { lightTheme: false };
@@ -46,54 +43,6 @@
                 if (!teams.configured) return 'unknown';
                 if (teams.lastError) return 'heartbeat_missing';
                 return teams.lastSuccessAt ? 'ok' : 'unknown';
-            },
-            flowsKnown: function () {
-                return Object.prototype.hasOwnProperty.call(this.flowSummary, 'total');
-            },
-            systemState: function () {
-                var devices = this.devices || [];
-                var hasRows = devices.length > 0;
-                var dead = devices.some(function (device) { return device.state === 'dead'; });
-                var actionable = hasRows
-                    ? devices.some(function (device) {
-                        return device.state && device.state !== 'ok' && device.state !== 'unknown';
-                    })
-                    : (this.fleetSummary.alerts || 0) > 0;
-                var unknownDevices = devices.some(function (device) { return device.state === 'unknown'; });
-                var unavailable = (this.flowsKnown && (this.flowSummary.down || 0) > 0) || dead;
-                var attention = (this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || actionable;
-                var unverified = (this.flowSummary.unknown || 0) > 0 || unknownDevices;
-                if (!this.connected) {
-                    if (!this.generatedAt && !this.flowsKnown) return { label: 'État inconnu', state: 'unknown' };
-                    if (unavailable) return { label: 'Dernier relevé : des éléments sont indisponibles', state: 'dead' };
-                    if (attention) return { label: 'Dernier relevé : des éléments nécessitent votre attention', state: 'cloud_down' };
-                    if (unverified || this.stale) return { label: 'Dernier relevé : des éléments sont à vérifier', state: 'unknown' };
-                    return { label: 'Dernier relevé : aucun défaut signalé', state: 'unknown' };
-                }
-                if (unavailable) return { label: 'Des éléments sont indisponibles', state: 'dead' };
-                if (!this.generatedAt || !this.flowsKnown) return { label: 'État inconnu', state: 'unknown' };
-                if (attention) return { label: 'Des éléments nécessitent votre attention', state: 'cloud_down' };
-                if (unverified) return { label: 'Des éléments sont à vérifier', state: 'unknown' };
-                if (this.stale) return { label: 'État non confirmé', state: 'heartbeat_missing' };
-                return { label: 'Tout fonctionne', state: 'ok' };
-            },
-            affectedFlows: function () {
-                return (this.flowSummary.degraded || 0) + (this.flowSummary.down || 0);
-            },
-            incidentsLabel: function () {
-                if (!this.flowsKnown) return 'incidents non confirmés';
-                return (this.flowSummary.incidentsActive || 0) + ' incidents';
-            },
-            flowsLabel: function () {
-                if (!this.flowsKnown) return 'flux non confirmés';
-                var unknown = this.flowSummary.unknown || 0;
-                if (unknown > 0 && this.affectedFlows === 0) return unknown + ' flux non confirmés';
-                if (unknown > 0) return this.affectedFlows + ' flux, ' + unknown + ' non confirmés';
-                return this.affectedFlows + ' flux';
-            },
-            alertsLabel: function () {
-                if (!this.generatedAt) return 'alertes flotte non confirmées';
-                return (this.fleetSummary.alerts || 0) + ' alertes flotte';
             }
         },
         methods: {
@@ -117,14 +66,9 @@
                 '<div class="header-content">' +
                     '<div class="header-identity">' +
                         '<div><p class="eyebrow">Supervision</p><h1>{{ fleetName }}</h1></div>' +
-                        '<status-badge :state="systemState.state" :label="systemState.label"></status-badge>' +
                     '</div>' +
                     '<div class="header-meta header-meta--primary">' +
-                        '<span v-if="connected === false && (generatedAt || flowsKnown)" class="system-summary">Les compteurs qui suivent décrivent le dernier relevé reçu.</span>' +
-                        '<span class="system-summary">{{ incidentsLabel }}</span>' +
-                        '<span class="system-summary">{{ flowsLabel }}</span>' +
-                        '<span class="system-summary">{{ alertsLabel }}</span>' +
-                        '<span class="system-summary" :title="formatDateTime(generatedAt)">{{ connected ? \'Actualisé\' : \'Reçu\' }} {{ formatRelative(generatedAt) }}</span>' +
+                        '<span class="system-summary" :title="formatDateTime(generatedAt)">Dernier relevé {{ formatRelative(generatedAt) }}</span>' +
                         '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'Connecté\' : \'Hors ligne\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
                         '<button class="header-theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Activer le thème sombre\' : \'Activer le thème clair\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair\' : \'Thème sombre\' }}</button>' +
                         '<button class="header-command" type="button" @click="$emit(\'open-command\')">Rechercher <kbd>Ctrl K</kbd></button>' +

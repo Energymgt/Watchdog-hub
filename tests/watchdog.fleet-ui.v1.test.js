@@ -32,7 +32,10 @@ describe('Fleet Command Center', () => {
         assert.match(detail, /device\.indicators\.mqtt/);
         assert.match(detail, /device\.indicators\.buffer/);
         assert.match(formatters, /source\.device && source\.device\.protocol/);
-        assert.match(list, /Service terrain/);
+        assert.match(list, /Heartbeat/);
+        assert.match(list, /Détail/);
+        assert.doesNotMatch(list, /<th scope="col">Service terrain/);
+        assert.match(detail, /Service terrain/);
         assert.match(filters, /Service terrain/);
         assert.match(detail, /Dernière lecture Modbus/);
         assert.match(detail, /Erreur Modbus récente/);
