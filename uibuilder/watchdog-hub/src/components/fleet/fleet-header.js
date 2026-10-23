@@ -31,10 +31,14 @@
         },
         computed: {
             balenaState: function () {
-                return this.sourceStatus.balena && this.sourceStatus.balena.ok ? 'ok' : 'dead';
+                var balena = this.sourceStatus.balena;
+                if (!balena || typeof balena.ok !== 'boolean') return 'unknown';
+                return balena.ok ? 'ok' : 'dead';
             },
             mqttState: function () {
-                return this.sourceStatus.mqtt && this.sourceStatus.mqtt.ok ? 'ok' : 'heartbeat_missing';
+                var mqtt = this.sourceStatus.mqtt;
+                if (!mqtt || typeof mqtt.ok !== 'boolean') return 'unknown';
+                return mqtt.ok ? 'ok' : 'heartbeat_missing';
             },
             teamsState: function () {
                 var teams = this.sourceStatus.teams || {};
@@ -42,17 +46,36 @@
                 if (teams.lastError) return 'heartbeat_missing';
                 return teams.lastSuccessAt ? 'ok' : 'unknown';
             },
+            flowsKnown: function () {
+                return Object.prototype.hasOwnProperty.call(this.flowSummary, 'total');
+            },
             systemState: function () {
                 if (!this.connected) return { label: 'DISCONNECTED', state: 'dead' };
-                if (!this.generatedAt) return { label: 'UNKNOWN', state: 'unknown' };
+                if (!this.generatedAt || !this.flowsKnown) return { label: 'UNKNOWN', state: 'unknown' };
                 if ((this.flowSummary.down || 0) > 0) return { label: 'CRITICAL', state: 'dead' };
                 if ((this.flowSummary.incidentsActive || 0) > 0 || (this.flowSummary.degraded || 0) > 0 || (this.fleetSummary.alerts || 0) > 0) {
                     return { label: 'DEGRADED', state: 'cloud_down' };
                 }
+                if ((this.flowSummary.unknown || 0) > 0) return { label: 'UNKNOWN', state: 'unknown' };
                 return { label: 'HEALTHY', state: 'ok' };
             },
             affectedFlows: function () {
                 return (this.flowSummary.degraded || 0) + (this.flowSummary.down || 0);
+            },
+            incidentsLabel: function () {
+                if (!this.flowsKnown) return 'incidents non confirmés';
+                return (this.flowSummary.incidentsActive || 0) + ' incidents';
+            },
+            flowsLabel: function () {
+                if (!this.flowsKnown) return 'flux non confirmés';
+                var unknown = this.flowSummary.unknown || 0;
+                if (unknown > 0 && this.affectedFlows === 0) return unknown + ' flux non confirmés';
+                if (unknown > 0) return this.affectedFlows + ' flux, ' + unknown + ' non confirmés';
+                return this.affectedFlows + ' flux';
+            },
+            alertsLabel: function () {
+                if (!this.generatedAt) return 'alertes flotte non confirmées';
+                return (this.fleetSummary.alerts || 0) + ' alertes flotte';
             }
         },
         methods: {
@@ -79,9 +102,9 @@
                         '<status-badge :state="systemState.state" :label="systemState.label"></status-badge>' +
                     '</div>' +
                     '<div class="header-meta header-meta--primary">' +
-                        '<span class="system-summary">{{ flowSummary.incidentsActive || 0 }} incidents</span>' +
-                        '<span class="system-summary">{{ affectedFlows }} flux</span>' +
-                        '<span class="system-summary">{{ fleetSummary.alerts || 0 }} alertes flotte</span>' +
+                        '<span class="system-summary">{{ incidentsLabel }}</span>' +
+                        '<span class="system-summary">{{ flowsLabel }}</span>' +
+                        '<span class="system-summary">{{ alertsLabel }}</span>' +
                         '<span class="system-summary" :title="formatDateTime(generatedAt)">Snapshot {{ formatRelative(generatedAt) }}</span>' +
                         '<span class="header-live"><status-badge :state="connected ? \'ok\' : \'dead\'" :label="connected ? \'LIVE\' : \'OFFLINE\'"></status-badge><span class="sr-only">{{ connected ? \'WebSocket connected\' : \'WebSocket disconnected\' }}</span></span>' +
                         '<button class="header-theme-toggle" type="button" :aria-pressed="lightTheme ? \'true\' : \'false\'" :aria-label="lightTheme ? \'Activer le thème sombre\' : \'Activer le thème clair\'" @click="toggleTheme">{{ lightTheme ? \'Thème clair\' : \'Thème sombre\' }}</button>' +

@@ -88,4 +88,31 @@ describe('workspace UI Events', () => {
         assert.doesNotMatch(page, /FLOW_RECOVERED|CRITICAL|HIGH|MEDIUM|LOW/);
         assert.doesNotMatch(page, /#anomalies|#incidents/);
     });
+
+    it('ouvre la vue events et relie un événement à son flux sans perdre le this', () => {
+        const context = {
+            window: {
+                WatchdogHub: {
+                    formatters: { formatDateTime: function () { return ''; } }
+                }
+            }
+        };
+        vm.createContext(context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'store/fleet-store.js'), 'utf8'), context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/events/events-page.js'), 'utf8'), context);
+
+        const store = context.window.WatchdogHub.createFleetStore({
+            reactive: function (state) { return state; }
+        });
+        store.setView('events');
+        assert.equal(store.state.view, 'events');
+        store.setView('inconnue');
+        assert.equal(store.state.view, 'overview');
+
+        const selected = context.window.WatchdogHub.components.EventsPage.computed.selectedFlow.call({
+            state: { selectedEvent: { event_id: 'EVT-1', flow_id: 'METEO_01' } },
+            flows: [{ flow_id: 'METEO_01', name: 'Météo' }]
+        });
+        assert.equal(selected.flow_id, 'METEO_01');
+    });
 });

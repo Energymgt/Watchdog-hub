@@ -199,7 +199,7 @@ describe('HTTP resolutions Lot 7', { concurrency: false }, () => {
     before(async () => {
         dbPath = tmpDb();
         registry = openRegistry(dbPath);
-        server = createIngestServer(registry);
+        server = createIngestServer(registry, { token: '' });
         await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
         port = server.address().port;
     });

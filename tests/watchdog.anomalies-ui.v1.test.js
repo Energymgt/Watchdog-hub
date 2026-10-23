@@ -59,4 +59,21 @@ describe('workspace UI Anomalies', () => {
         assert.match(page, /Fermer le diagnostic/);
         assert.match(page, /last_event_id/);
     });
+
+    it('retrouve le flux lié sans dépendre du this du callback', () => {
+        const context = {
+            window: {
+                WatchdogHub: {
+                    formatters: { formatDateTime: function () { return ''; } }
+                }
+            }
+        };
+        vm.createContext(context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/anomalies/anomalies-page.js'), 'utf8'), context);
+        const selected = context.window.WatchdogHub.components.AnomaliesPage.computed.selectedFlow.call({
+            state: { selectedAnomaly: { anomaly_id: 'ANOM-1', flow_id: 'CSV_OASSIS_01' } },
+            flows: [{ flow_id: 'CSV_OASSIS_01', name: 'CSV' }]
+        });
+        assert.equal(selected.name, 'CSV');
+    });
 });

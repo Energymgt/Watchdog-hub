@@ -26,9 +26,13 @@
             loading: { type: Boolean, default: false },
             connected: { type: Boolean, default: null },
             stale: { type: Boolean, default: false },
+            fleetKnown: { type: Boolean, default: false },
             now: { type: Number, default: Date.now }
         },
         computed: {
+            flowsKnown: function () {
+                return Object.prototype.hasOwnProperty.call(this.flowSummary, 'total');
+            },
             affectedFlows: function () {
                 return (this.flowSummary.degraded || 0) + (this.flowSummary.down || 0);
             },
@@ -63,8 +67,11 @@
                     || (this.fleetSummary.alerts || 0) > 0) {
                     return { label: 'SITUATION DÉGRADÉE', tone: 'warning', detail: 'Des incidents, flux dégradés ou alertes flotte sont présents.' };
                 }
-                if ((this.flowSummary.unknown || 0) > 0) {
-                    return { label: 'ÉTAT PARTIEL', tone: 'unknown', detail: 'Certains flux sont dans un état inconnu.' };
+                if ((this.flowSummary.unknown || 0) > 0 || !this.fleetKnown) {
+                    var details = [];
+                    if ((this.flowSummary.unknown || 0) > 0) details.push('Certains flux sont dans un état inconnu.');
+                    if (!this.fleetKnown) details.push('Le snapshot flotte n\'a pas été reçu.');
+                    return { label: 'ÉTAT PARTIEL', tone: 'unknown', detail: details.join(' ') };
                 }
                 return { label: 'SITUATION NOMINALE', tone: 'ok', detail: 'Aucun incident actif, flux dégradé ou alerte flotte dans les snapshots.' };
             }
@@ -87,6 +94,9 @@
             kpiTone: function (count, tone) {
                 return count > 0 ? tone : 'unknown';
             },
+            knownCount: function (known, value) {
+                return known ? value : null;
+            },
             openIncident: function (incident) {
                 this.$emit('open-incident', incident);
             },
@@ -105,10 +115,10 @@
                     '<div><p class="eyebrow">Console opérationnelle</p><h2 id="overview-title">Operational Overview</h2><p class="overview-situation" :class="\'overview-situation--\' + situation.tone"><strong>{{ situation.label }}</strong><span>{{ situation.detail }}</span></p></div>' +
                 '</div>' +
                 '<section class="overview-kpis" aria-label="Résumé opérationnel" :aria-busy="loading ? \'true\' : \'false\'">' +
-                    '<button class="overview-kpi" type="button" @click="openView(\'incidents\')"><kpi-card label="Incidents actifs" :value="flowSummary.incidentsActive || 0" :tone="kpiTone(flowSummary.incidentsActive || 0, \'critical\')" :loading="loading"></kpi-card></button>' +
-                    '<button class="overview-kpi" type="button" @click="openView(\'flows\')"><kpi-card label="Flux dégradés" :value="affectedFlows" :tone="kpiTone(affectedFlows, \'warning\')" :loading="loading"></kpi-card></button>' +
-                    '<button class="overview-kpi" type="button" @click="openView(\'fleet\')"><kpi-card label="Alertes flotte" :value="fleetSummary.alerts || 0" :tone="kpiTone(fleetSummary.alerts || 0, \'high\')" :loading="loading"></kpi-card></button>' +
-                    '<button class="overview-kpi" type="button" @click="openView(\'fleet\')"><kpi-card label="Appareils suivis" :value="fleetSummary.total || 0" tone="unknown" :loading="loading"></kpi-card></button>' +
+                    '<button class="overview-kpi" type="button" @click="openView(\'incidents\')"><kpi-card label="Incidents actifs" :value="knownCount(flowsKnown, flowSummary.incidentsActive || 0)" :tone="kpiTone(flowsKnown ? (flowSummary.incidentsActive || 0) : 0, \'critical\')" :loading="loading"></kpi-card></button>' +
+                    '<button class="overview-kpi" type="button" @click="openView(\'flows\')"><kpi-card label="Flux dégradés" :value="knownCount(flowsKnown, affectedFlows)" :tone="kpiTone(flowsKnown ? affectedFlows : 0, \'warning\')" :loading="loading"></kpi-card></button>' +
+                    '<button class="overview-kpi" type="button" @click="openView(\'fleet\')"><kpi-card label="Alertes flotte" :value="knownCount(fleetKnown, fleetSummary.alerts || 0)" :tone="kpiTone(fleetKnown ? (fleetSummary.alerts || 0) : 0, \'high\')" :loading="loading"></kpi-card></button>' +
+                    '<button class="overview-kpi" type="button" @click="openView(\'fleet\')"><kpi-card label="Appareils suivis" :value="knownCount(fleetKnown, fleetSummary.total || 0)" tone="unknown" :loading="loading"></kpi-card></button>' +
                 '</section>' +
                 '<div class="overview-grid">' +
                     '<section class="overview-panel" aria-labelledby="priority-incidents-title">' +

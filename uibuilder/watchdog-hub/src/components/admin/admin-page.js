@@ -33,7 +33,7 @@
             now: { type: Number, default: Date.now }
         },
         data: function () {
-            return { form: emptyForm(), dirty: false };
+            return { form: emptyForm(), dirty: false, errorBeforeSave: null };
         },
         watch: {
             admin: {
@@ -41,6 +41,13 @@
                 handler: function () {
                     if (!this.dirty) this.hydrate();
                 }
+            },
+            saving: function (saving, previous) {
+                if (!previous || saving) return;
+                var failed = Boolean(this.error) && this.error !== this.errorBeforeSave;
+                this.errorBeforeSave = null;
+                this.dirty = failed;
+                if (!failed) this.hydrate();
             }
         },
         mounted: function () {
@@ -108,7 +115,7 @@
             },
             save: function () {
                 if (this.saving || Object.keys(this.validationErrors).length) return;
-                this.dirty = false;
+                this.errorBeforeSave = this.error || '';
                 this.$emit('save', {
                     fleetName: this.form.fleetName,
                     balenaAppId: this.form.balenaAppId,
@@ -189,7 +196,7 @@
                 '</div>' +
                 '<article class="integration-card">' +
                     '<div class="integration-card__head"><h3>Identité et seuils</h3></div>' +
-                    '<p>Valeurs actuelles du flow (grâce 5 min, 2 polls, TTL 30 j). Les modifier ici ne change pas la machine d’états, seulement les constantes.</p>' +
+                    '<p>Ces seuils alimentent la machine d’états déjà en place : grâce hors ligne, nombre de polls avant alerte Teams et rétention des heartbeats.</p>' +
                     '<div class="admin-settings">' +
                         '<ui-field label="Nom de la flotte" extra-class="admin-field" :error="validationErrors.fleetName">' +
                             '<input :value="form.fleetName" maxlength="80" required :aria-invalid="Boolean(validationErrors.fleetName)" @input="markDirty(); form.fleetName = $event.target.value">' +

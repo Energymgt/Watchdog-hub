@@ -156,4 +156,77 @@ describe('contrat du shell UI Watchdog Hub', () => {
         assert.match(app, /target_kind !== 'flow'/);
         assert.doesNotMatch(detail, /ACKNOWLEDGED|INVESTIGATING/);
     });
+
+    it('ne présente pas un snapshot absent ou un flux inconnu comme un état sain', () => {
+        const context = {
+            window: {
+                WatchdogHub: {
+                    flowsFormatters: {
+                        incidentStateMeta: function () { return { rank: 0 }; },
+                        reasonLabel: function (value) { return value; }
+                    },
+                    formatters: {
+                        formatDateTime: function () { return ''; },
+                        formatRelative: function () { return ''; },
+                        stateMeta: function () { return { label: '', tone: 'unknown' }; }
+                    }
+                }
+            }
+        };
+        vm.createContext(context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/overview-page.js'), 'utf8'), context);
+        vm.runInContext(fs.readFileSync(path.join(UI_ROOT, 'components/fleet/fleet-header.js'), 'utf8'), context);
+        const overview = context.window.WatchdogHub.components.OverviewPage;
+        const header = context.window.WatchdogHub.components.FleetHeader;
+        const flowsOk = { total: 2, ok: 2, degraded: 0, down: 0, unknown: 0, incidentsActive: 0 };
+
+        const partial = overview.computed.situation.call({
+            loading: false,
+            connected: true,
+            stale: false,
+            fleetKnown: false,
+            flowSummary: flowsOk,
+            fleetSummary: {}
+        });
+        assert.equal(partial.tone, 'unknown');
+        assert.notEqual(partial.label, 'SITUATION NOMINALE');
+
+        const nominal = overview.computed.situation.call({
+            loading: false,
+            connected: true,
+            stale: false,
+            fleetKnown: true,
+            flowSummary: flowsOk,
+            fleetSummary: { alerts: 0, total: 1 }
+        });
+        assert.equal(nominal.label, 'SITUATION NOMINALE');
+
+        const unknownFlows = header.computed.systemState.call({
+            connected: true,
+            generatedAt: 1,
+            flowsKnown: true,
+            flowSummary: { total: 1, down: 0, degraded: 0, unknown: 1, incidentsActive: 0 },
+            fleetSummary: { alerts: 0 }
+        });
+        assert.equal(unknownFlows.label, 'UNKNOWN');
+
+        const unknownLabel = header.computed.flowsLabel.call({
+            flowsKnown: true,
+            affectedFlows: 0,
+            flowSummary: { unknown: 3 }
+        });
+        assert.equal(unknownLabel, '3 flux non confirmés');
+
+        const healthy = header.computed.systemState.call({
+            connected: true,
+            generatedAt: 1,
+            flowsKnown: true,
+            flowSummary: flowsOk,
+            fleetSummary: { alerts: 0 }
+        });
+        assert.equal(healthy.label, 'HEALTHY');
+
+        const missingSource = header.computed.balenaState.call({ sourceStatus: {} });
+        assert.equal(missingSource, 'unknown');
+    });
 });

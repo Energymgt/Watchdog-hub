@@ -602,7 +602,11 @@
                         '<state-panel v-else kind="error" title="Configuration indisponible" :message="state.lastError || \'Aucun snapshot n’a été reçu.\'" action-label="Réessayer" @retry="retry"></state-panel>' +
                     '</template>' +
                     '<template v-else-if="state.view === \'overview\'">' +
-                        '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :incidents="flowsState.incidents" :flows="flowsState.flows" :activity="activity" :activity-partial="activityPartial" :recent-transitions="state.recentTransitions" :loading="flowsState.loading || flowsState.refreshing" :connected="state.connected === true" :stale="stale" :now="now" @open-incident="openIncident" @open-view="openView"></overview-page>' +
+                        '<ui-banner v-if="state.lastError && !state.snapshot" kind="error">{{ state.lastError }}</ui-banner>' +
+                        '<ui-banner v-if="flowsState.lastError" kind="error">{{ flowsState.lastError }}</ui-banner>' +
+                        '<ui-banner v-if="anomaliesState.lastError" kind="error">{{ anomaliesState.lastError }}</ui-banner>' +
+                        '<ui-banner v-if="eventsState.lastError" kind="error">{{ eventsState.lastError }}</ui-banner>' +
+                        '<overview-page :fleet-summary="state.summary" :flow-summary="flowsState.summary" :fleet-known="Boolean(state.snapshot)" :incidents="flowsState.incidents" :flows="flowsState.flows" :activity="activity" :activity-partial="activityPartial" :recent-transitions="state.recentTransitions" :loading="flowsState.loading || flowsState.refreshing" :connected="state.connected === true" :stale="stale" :now="now" @open-incident="openIncident" @open-view="openView"></overview-page>' +
                     '</template>' +
                     '<template v-else-if="state.view === \'flows\' || state.view === \'incidents\'">' +
                         '<flows-page :state="flowsState" :section="state.view" :selected-flow="selectedFlow" :anomalies="anomaliesState.anomalies" :events="eventsState.events" :now="now" @refresh="loadFlows(true)" @retry="loadFlows(false)" @select-incident="openIncident" @select-anomaly="openAnomalyFromFlow" @select-event="openEventFromFlow" @show-incidents="showFlowIncidents" @select-flow="selectFlow"></flows-page>' +
