@@ -17,23 +17,26 @@
         template:
             '<nav class="app-nav" aria-label="Navigation principale">' +
                 '<p class="app-nav__brand">Watchdog</p>' +
-                '<div class="app-nav__group">' +
+                '<div class="app-nav__group app-nav__section">' +
+                    '<p class="app-nav__heading">Supervision</p>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'overview\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'overview\')">Vue d’ensemble</button>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'flows\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'flows\')">Flux métier <span v-if="flows" class="app-nav__count">{{ flows }}</span></button>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'fleet\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'fleet\')">Appareils <span v-if="fleetAlerts" class="app-nav__count">{{ fleetAlerts }}</span></button>' +
                 '</div>' +
-                '<div class="app-nav__group">' +
+                '<div class="app-nav__group app-nav__section">' +
+                    '<p class="app-nav__heading">Notifications</p>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'alerts\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'alerts\')">Alertes <span v-if="alertCount" class="app-nav__count">{{ alertCount }}</span></button>' +
                 '</div>' +
-                '<div class="app-nav__group">' +
+                '<div class="app-nav__group app-nav__section">' +
                     '<p class="app-nav__label" id="app-nav-problems">Problèmes</p>' +
                     '<div class="app-nav__sub" role="group" aria-labelledby="app-nav-problems">' +
                         '<button class="app-nav__item" type="button" :aria-current="view === \'incidents\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'incidents\')">Incidents <span v-if="incidents" class="app-nav__count">{{ incidents }}</span></button>' +
-                        '<button class="app-nav__item" type="button" :aria-current="view === \'anomalies\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'anomalies\')">Anomalies <span v-if="anomalies" class="app-nav__count">{{ anomalies }}</span></button>' +
-                        '<button class="app-nav__item" type="button" :aria-current="view === \'events\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'events\')">Événements <span v-if="events" class="app-nav__count">{{ events }}</span></button>' +
+                        '<button class="app-nav__item" type="button" :aria-current="view === \'anomalies\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'anomalies\')">Anomalies <span v-if="anomalies" class="app-nav__count app-nav__count--warning">{{ anomalies }}</span></button>' +
+                        '<button class="app-nav__item" type="button" :aria-current="view === \'events\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'events\')">Événements <span v-if="events" class="app-nav__count app-nav__count--volume">{{ events }}</span></button>' +
                     '</div>' +
                 '</div>' +
-                '<div class="app-nav__group app-nav__group--admin">' +
+                '<div class="app-nav__group app-nav__group--admin app-nav__section">' +
+                    '<p class="app-nav__heading">Système</p>' +
                     '<button class="app-nav__item" type="button" :aria-current="view === \'admin\' ? \'page\' : undefined" @click="$emit(\'update:view\', \'admin\')">Configuration</button>' +
                 '</div>' +
             '</nav>'

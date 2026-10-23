@@ -3672,3 +3672,78 @@ button.activity-timeline__item:focus-visible strong {
         --text: #ffffff;
     }
 }
+
+/* ==========================================================================
+   Couche v2 — interface validée (socle A cockpit + vues opérationnelles B)
+   ========================================================================== */
+
+/* --- Navigation groupée : en-têtes de section et compteur de volume --- */
+.app-nav__section { position: relative; }
+.app-nav__heading {
+    margin: 0;
+    padding: 0 0.85rem;
+    color: var(--muted);
+    font-size: 0.66rem;
+    font-weight: 750;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+.app-nav__count--volume {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+}
+.app-nav__count--warning {
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+
+/* --- Tiroir d'inspection unifié : la modale adopte le chrome du drawer --- */
+.modal-backdrop {
+    place-items: stretch end;
+    padding: 0;
+    background: rgba(7, 12, 19, 0.55);
+    backdrop-filter: blur(2px);
+}
+.modal {
+    width: min(46rem, 48vw);
+    max-height: 100dvh;
+    padding: 1.5rem;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--surface);
+    box-shadow: -20px 0 48px rgba(0, 0, 0, 0.28);
+}
+.modal__header { position: sticky; top: -1.5rem; z-index: 1; padding-top: 1.5rem; background: var(--surface); }
+
+@media (max-width: 900px) {
+    .modal { width: min(42rem, 72vw); }
+}
+@media (max-width: 700px) {
+    .modal { width: 100%; border-left: 0; }
+}
+
+/* --- Panneaux de détail en ligne : trait d'inspection homogène --- */
+.flow-detail,
+.anomaly-detail,
+.event-detail {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+.flow-detail--empty,
+.anomaly-detail--empty,
+.event-detail--empty { box-shadow: none; }
+
+/* --- KPI interactifs --- */
+.fleet-kpi-button { border: 0; padding: 0; background: none; text-align: left; }
+.fleet-kpi-button .kpi-card { height: 100%; transition: border-color 0.12s ease, transform 0.12s ease; }
+.fleet-kpi-button:hover .kpi-card { border-color: var(--border-strong); transform: translateY(-1px); }
+
+/* --- Densité NOC des tableaux --- */
+.table-wrap table { font-size: 0.84rem; }
+.table-wrap tbody tr { cursor: pointer; }
